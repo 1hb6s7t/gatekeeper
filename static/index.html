@@ -40,10 +40,14 @@ section:last-child{border-right:none}
 .fact{padding:5px 8px;border-left:2px solid var(--line);margin:0 0 5px 4px;font-size:13px}
 .fact:hover{border-left-color:var(--accent)}
 .fact .ch{font-family:var(--mono);font-size:11px;color:var(--muted);margin-right:6px}
+.fact .fact-text{cursor:text}.fact .fact-text:hover{text-decoration:underline;text-decoration-style:dotted;text-decoration-color:var(--muted)}
+.fact .change-pill{margin-right:5px;background:var(--accent-soft);color:var(--accent)}
 .fact .q{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .fact .q::before{content:"引 "}
 .fact .del{float:right;font-size:11px;color:var(--muted);background:none;border:none;padding:0 4px}
 .fact .del:hover{color:var(--bad)}
+.rules{border:1px solid var(--line);border-radius:5px;background:var(--panel);margin-bottom:14px;padding:7px 10px}.rules summary{cursor:pointer;font-weight:500}.rule{padding:7px 0;border-top:1px solid var(--line);font-size:12.5px}.rule:first-of-type{margin-top:6px}.rule .rule-del{float:right;padding:0 5px;background:none;border:none;color:var(--muted);font-size:11px}.rule .rule-del:hover{color:var(--bad)}.rule .note{color:var(--muted);margin-top:2px}
+.skipped{margin-top:12px}.skipped summary{cursor:pointer;color:var(--muted);font-size:12.5px;padding:5px 2px}.skipped .finding{margin-top:8px}
 .finding{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px;border-left-width:4px}
 .finding.high{border-left-color:var(--bad)}.finding.medium{border-left-color:var(--warn)}.finding.low{border-left-color:var(--muted)}
 .finding.done{opacity:.55}
@@ -146,16 +150,18 @@ $('#btnCreate').onclick=async()=>{try{status('#leftStatus','切分中…',false,
 
 function renderProject(){const p=state.project;$('#newProj').hidden=true;$('#chapters').hidden=false;$('#btnExport').disabled=false;$('#chapCount').textContent=`${p.title} · ${p.chapters.length} 章`;
 $('#chapters').innerHTML=p.chapters.map((c,i)=>{const t=state.timing[i];const timing=t?` · ${t.seconds}s · ${SRC[t.source]||t.source}`:'';return `<div class="chap"><span class="t">${esc(c.title)}</span><span class="n">${c.text.length} 字${esc(timing)}</span>${c.extracted?'<span class="pill good">已抽取</span>':`<button class="sm" data-i="${i}">抽取</button>`}</div>`}).join('');
-$('#chapters').querySelectorAll('button').forEach(b=>b.onclick=()=>extractOne(+b.dataset.i));renderBible();renderTimeline()}
+$('#chapters').querySelectorAll('button').forEach(b=>b.onclick=()=>extractOne(+b.dataset.i));renderBible()}
 
 async function extractOne(i,fromBatch=false){if(state.extracting&&!fromBatch)return false;const p=state.project,c=p.chapters[i],started=Date.now();const timer=setInterval(()=>status('#midStatus',`抽取 ${c.title} · 已用 ${Math.round((Date.now()-started)/1000)}s`,false,true),1000);try{status('#midStatus',`抽取 ${c.title} · 已用 0s`,false,true);const r=await api(`/projects/${p.id}/extract`,{method:'POST',body:JSON.stringify({chapter_index:i,use_cache:$('#useCache').checked})});state.project=r.project;state.timing[i]={seconds:Math.round((Date.now()-started)/1000),source:r.source};renderProject();status('#midStatus',`${c.title}：+${r.added} 条事实 · ${state.timing[i].seconds}s · 来源 ${SRC[r.source]||r.source}`);return true}catch(e){status('#midStatus',e.message,true);return false}finally{clearInterval(timer)}}
 $('#btnExtractAll').onclick=async()=>{if(!state.project){status('#midStatus','先切分章节',true);return}if(state.extracting){state.stop=true;status('#midStatus','正在停止；当前章节完成后会停在下一章之前。',false,true);return}state.extracting=true;state.stop=false;$('#btnExtractAll').textContent='停止';try{for(let i=0;i<state.project.chapters.length;i++){if(state.stop)break;if(state.project.chapters[i].extracted)continue;if(!await extractOne(i,true))return}if(state.stop){const done=state.project.chapters.filter(c=>c.extracted).length;status('#midStatus',`已停止，已抽取 ${done} 章，可再点继续。`)}else{status('#midStatus','设定库已建立。切到「新章节」检查。')}}finally{state.extracting=false;state.stop=false;$('#btnExtractAll').textContent='建立设定库'}};
 
-function renderBible(){const p=state.project;const facts=p.bible.reduce((n,e)=>n+e.facts.length,0);$('#bibleCount').textContent=p.bible.length?`${p.bible.length} 个实体 · ${facts} 条事实`:'';
-if(!p.bible.length){$('#bible').innerHTML='<div class="empty">点「建立设定库」开始抽取。</div>';return}
+function renderBible(){const p=state.project;const facts=p.bible.reduce((n,e)=>n+e.facts.length,0);const rules=p.rules||[];$('#bibleCount').textContent=p.bible.length?`${p.bible.length} 个实体 · ${facts} 条事实${rules.length?' · '+rules.length+' 条规则':''}`:'';
+const ruleHtml=`<details class="rules" ${rules.length?'':'open'}><summary>规则 ${rules.length} 条 · 有意为之的矛盾不会再次提醒</summary>${rules.length?rules.map(r=>`<div class="rule"><button class="rule-del" title="删除规则并恢复发现" data-rid="${esc(r.id)}">删除</button><b>${esc(r.entry)}</b>：${esc(r.fact)}${r.note?`<div class="note">备注：${esc(r.note)}</div>`:''}</div>`).join(''):'<div class="hint" style="margin-top:6px">在右侧把一条发现标记为「有意为之」后，它会出现在这里。</div>'}</details>`;
+if(!p.bible.length){$('#bible').innerHTML=ruleHtml+'<div class="empty">点「建立设定库」开始抽取。</div>';return}
 const order=['character','location','item','timeline'];const sorted=[...p.bible].sort((a,b)=>order.indexOf(a.type)-order.indexOf(b.type));
-$('#bible').innerHTML=sorted.map(e=>`<div class="entry"><h4><span class="ty">${TYPE[e.type]}</span>${esc(e.name)}</h4>${e.facts.map(f=>`<div class="fact"><button class="del" title="删除这条事实" data-e="${e.id}" data-f="${f.id}">×</button><span class="ch">${esc(f.chapter)}</span>${esc(f.fact)}${f.quote?`<span class="q ${f.quote_verified?'':'unv'}" data-q="${esc(f.quote)}" data-ch="${esc(f.chapter)}" style="cursor:pointer">「${esc(f.quote)}」${f.quote_verified?'':' <span class="pill warn">引用未在原文逐字命中</span>'}</span>`:''}</div>`).join('')}</div>`).join('');
+$('#bible').innerHTML=ruleHtml+sorted.map(e=>`<div class="entry"><h4><span class="ty">${TYPE[e.type]}</span>${esc(e.name)}</h4>${e.facts.map(f=>`<div class="fact"><button class="del" title="删除这条事实" data-e="${e.id}" data-f="${f.id}">×</button><span class="ch">${esc(f.chapter)}</span>${f.change?`<span class="pill change-pill">变更</span>`:''}<span class="fact-text" data-e="${e.id}" data-f="${f.id}">${esc(f.fact)}</span>${f.quote?`<span class="q ${f.quote_verified?'':'unv'}" data-q="${esc(f.quote)}" data-ch="${esc(f.chapter)}" style="cursor:pointer">「${esc(f.quote)}」${f.quote_verified?'':' <span class="pill warn">引用未在原文逐字命中</span>'}</span>`:''}</div>`).join('')}</div>`).join('');
 $('#bible').querySelectorAll('.del').forEach(b=>b.onclick=async()=>{state.project=await api(`/projects/${p.id}/bible/${b.dataset.e}/facts/${b.dataset.f}`,{method:'DELETE'});renderBible()});
+$('#bible').querySelectorAll('.rule-del').forEach(b=>b.onclick=async()=>{state.project=await api(`/projects/${p.id}/rules/${b.dataset.rid}`,{method:'DELETE'});if(state.check)state.check=state.project.checks.find(x=>x.id===state.check.id)||state.check;renderBible();renderFindings()});
 $('#bible').querySelectorAll('.q').forEach(q=>q.onclick=()=>showQuote(q.dataset.ch,q.dataset.q))}
 
 function showQuote(chapterTitle,quote){const p=state.project;let src=null;if(state.check&&state.check.title===chapterTitle)src=state.check.text;else{const c=p.chapters.find(c=>c.title===chapterTitle);src=c?c.text:null}
@@ -169,17 +175,18 @@ $('#btnCheck').onclick=runCheck;
 $('#btnCommit').onclick=async()=>{const p=state.project;state.project=await api(`/projects/${p.id}/checks/${state.check.id}/commit`,{method:'POST'});renderProject();$('#btnCommit').disabled=true;status('#midStatus','已并入稿件，可在左侧对新章节抽取，更新设定库。')};
 $('#btnExport').onclick=()=>{if(state.project)window.open(`/api/projects/${state.project.id}/export.md`,'_blank')};
 
-function renderFindings(){const c=state.check;if(!c){return}const fs=c.findings;const open=fs.filter(f=>f.status==='open').length;$('#findCount').textContent=`${fs.length} 条 · ${open} 待处理`;
-if(!fs.length){$('#findings').innerHTML='<div class="empty">没有发现与设定库矛盾的地方。</div>';return}
-const sev={high:0,medium:1,low:2};const sorted=[...fs].sort((a,b)=>sev[a.severity]-sev[b.severity]);
-$('#findings').innerHTML=sorted.map(f=>`<div class="finding ${f.severity} ${f.status!=='open'?'done':''}" id="f-${f.id}">
-<div class="hd"><span class="pill ${f.severity==='high'?'bad':f.severity==='medium'?'warn':'mute'}">${SEV[f.severity]}</span><span class="pill acc">${TYPE[f.type]||f.type}</span><span class="spacer"></span>${f.status!=='open'?`<span class="pill mute">${{accepted:'已采纳',ignored:'已忽略',intentional:'有意为之'}[f.status]}</span>`:''}</div>
+function findingHtml(f,c){const statusText={accepted:'已采纳',ignored:'已忽略',intentional:'有意为之'}[f.status];return `<div class="finding ${f.severity} ${f.status!=='open'?'done':''}" id="f-${f.id}">
+<div class="hd"><span class="pill ${f.severity==='high'?'bad':f.severity==='medium'?'warn':'mute'}">${SEV[f.severity]}</span><span class="pill acc">${TYPE[f.type]||f.type}</span><span class="spacer"></span>${statusText?`<span class="pill mute">${statusText}</span>`:''}</div>
 <div class="ex">${esc(f.explanation)}</div>
 <div class="ev"><b>设定</b> ${esc(f.bible_entry)} · ${esc(f.bible_chapter)}：${esc(f.bible_fact)}${f.bible_quote?` <span class="q" data-ch="${esc(f.bible_chapter)}" data-q="${esc(f.bible_quote)}">「${esc(f.bible_quote)}」</span>`:''}</div>
 <div class="ev"><b>新章</b> <span class="q" data-ch="${esc(c.title)}" data-q="${esc(f.conflict_quote)}">「${esc(f.conflict_quote)}」</span>${f.conflict_verified?'':' <span class="pill warn">引用未逐字命中</span>'}</div>
 <div class="sug">建议：${esc(f.suggestion)}</div>
-<div class="acts"><button class="sm" data-s="accepted" data-f="${f.id}">采纳</button><button class="sm" data-s="intentional" data-f="${f.id}">有意为之，以后不报</button><button class="sm" data-s="ignored" data-f="${f.id}">忽略</button>${f.status!=='open'?`<button class="sm" data-s="open" data-f="${f.id}">恢复</button>`:''}</div></div>`).join('');
-$('#findings').querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{const p=state.project;state.project=await api(`/projects/${p.id}/checks/${c.id}/findings/${b.dataset.f}`,{method:'POST',body:JSON.stringify({status:b.dataset.s})});state.check=state.project.checks.find(x=>x.id===c.id);renderFindings()});
+<div class="acts"><button class="sm" data-s="accepted" data-f="${f.id}">采纳</button><button class="sm" data-s="intentional" data-f="${f.id}">有意为之，以后不报</button><button class="sm" data-s="ignored" data-f="${f.id}">忽略</button>${f.status!=='open'?`<button class="sm" data-s="open" data-f="${f.id}">恢复</button>`:''}</div></div>`}
+function renderFindings(){const c=state.check;if(!c){return}const fs=c.findings;const open=fs.filter(f=>f.status==='open').length;const skipped=fs.filter(f=>f.status==='intentional'&&f.rule_id);$('#findCount').textContent=`${fs.length} 条 · ${open} 待处理${skipped.length?' · '+skipped.length+' 条按规则跳过':''}`;
+if(!fs.length){$('#findings').innerHTML='<div class="empty">没有发现与设定库矛盾的地方。</div>';return}
+const sev={high:0,medium:1,low:2};const sorted=[...fs].sort((a,b)=>sev[a.severity]-sev[b.severity]);const active=sorted.filter(f=>!(f.status==='intentional'&&f.rule_id));const skippedHtml=skipped.length?`<details class="skipped"><summary>已按规则跳过 ${skipped.length} 条（展开）</summary>${skipped.map(f=>findingHtml(f,c)).join('')}</details>`:'';
+$('#findings').innerHTML=active.map(f=>findingHtml(f,c)).join('')+skippedHtml;
+$('#findings').querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{const p=state.project;let note='';if(b.dataset.s==='intentional'){note=window.prompt('给这条有意为之规则加一句备注（可空）：','');if(note===null)return}state.project=await api(`/projects/${p.id}/checks/${c.id}/findings/${b.dataset.f}`,{method:'POST',body:JSON.stringify({status:b.dataset.s,note})});state.check=state.project.checks.find(x=>x.id===c.id);renderBible();renderFindings()});
 $('#findings').querySelectorAll('.q').forEach(q=>q.onclick=()=>showQuote(q.dataset.ch,q.dataset.q))}
 
 // ------------ eval against answer key (sample only)

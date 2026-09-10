@@ -3,7 +3,10 @@ from __future__ import annotations
 
 import json
 import uuid
+from copy import deepcopy
+from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, Response
@@ -29,7 +32,12 @@ def load(pid: str) -> dict:
     p = _path(pid)
     if not p.exists():
         raise HTTPException(404, "project not found")
-    return json.loads(p.read_text(encoding="utf-8"))
+    project = json.loads(p.read_text(encoding="utf-8"))
+    if "rules" not in project:
+        project["rules"] = _migrate_intentional(project.get("intentional", []), project)
+    project.setdefault("checks", [])
+    project.setdefault("bible", [])
+    return project
 
 
 def save(project: dict) -> dict:
@@ -56,6 +64,47 @@ class CheckReq(BaseModel):
 
 class ResolveReq(BaseModel):
     status: str  # accepted | ignored | intentional | open
+    note: str = ""
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _migrate_intentional(items: list[dict], project: dict) -> list[dict]:
+    """Convert the first-version text exceptions into structured rules."""
+    rules = []
+    for item in items or []:
+        text = (item.get("text") or "").strip()
+        entry, separator, rest = text.partition("：")
+        fact, separator2, conflict_quote = rest.partition(" ⇄ ")
+        if not entry or not fact:
+            continue
+        bible_quote = ""
+        for bible_entry in project.get("bible", []):
+            if bible_entry.get("name") != entry:
+                continue
+            bible_fact = next((f for f in bible_entry.get("facts", []) if f.get("fact") == fact), None)
+            if bible_fact:
+                bible_quote = bible_fact.get("quote", "")
+                break
+        rules.append({
+            "id": item.get("id") or uuid.uuid4().hex[:8],
+            "kind": "intentional",
+            "entry": entry.strip(),
+            "fact": fact.strip(),
+            "bible_quote": bible_quote,
+            "conflict_quote": conflict_quote.strip() if separator2 else "",
+            "note": "",
+            "from_finding": item.get("finding_id", ""),
+            "created": item.get("created") or _now_iso(),
+        })
+    return rules
+
+
+def _rule_prompt(rule: dict) -> str:
+    anchor = rule.get("conflict_quote") or rule.get("bible_quote") or rule.get("fact", "")
+    return f"{rule.get('entry', '')}：{rule.get('fact', '')} ⇄ {anchor}"
 
 
 # ---------------------------------------------------------------- routes
@@ -86,14 +135,21 @@ def create_project(req: NewProject):
     chapters = engine.split_chapters(req.text)
     if not chapters or not chapters[0]["text"]:
         raise HTTPException(400, "没有识别到正文")
+    warnings = [
+        f"{chapter['title']} {len(chapter['text'])} 字，超出建议长度，抽取可能变慢或截断"
+        for chapter in chapters
+        if len(chapter["text"]) > 6000
+    ]
     project = {
         "id": uuid.uuid4().hex[:10],
         "title": req.title,
         "chapters": [{"title": c["title"], "text": c["text"], "extracted": False} for c in chapters],
         "bible": [],
         "checks": [],
-        "intentional": [],
+        "rules": [],
     }
+    if warnings:
+        project["warnings"] = warnings
     return save(project)
 
 
@@ -127,11 +183,44 @@ def check(pid: str, req: CheckReq):
     body = parts[0]["text"] if len(parts) == 1 else req.text.strip()
     title = req.title.strip() or (parts[0]["title"] if parts[0]["title"] != "第1章" else "新章节")
     chapter = {"title": title, "text": body}
-    intentional = [d["text"] for d in project["intentional"]]
-    try:
-        result = engine.check_chapter(project["bible"], len(project["chapters"]), chapter, intentional, allow_cache=req.use_cache)
-    except Exception as e:
-        raise HTTPException(502, f"模型调用失败：{e}") from e
+    rules = project.get("rules", [])
+    intentional = [_rule_prompt(rule) for rule in rules]
+
+    # A re-check after adding an intentional rule does not need another model
+    # call when the chapter and bible are unchanged. Reuse the previous raw
+    # findings and apply the new program-level rule filter below.
+    prior = None
+    if req.use_cache:
+        prior = next(
+            (
+                old
+                for old in reversed(project.get("checks", []))
+                if old.get("title") == chapter["title"] and old.get("text") == chapter["text"]
+            ),
+            None,
+        )
+    if prior is not None:
+        findings = deepcopy(prior.get("findings", []))
+        for finding in findings:
+            finding["id"] = uuid.uuid4().hex[:8]
+            finding["status"] = "open"
+            finding.pop("rule_id", None)
+        result = {"findings": findings, "source": "cache"}
+    else:
+        try:
+            result = engine.check_chapter(project["bible"], len(project["chapters"]), chapter, intentional, allow_cache=req.use_cache)
+        except Exception as e:
+            raise HTTPException(502, f"模型调用失败：{e}") from e
+
+    for finding in result["findings"]:
+        rule_id = engine.match_rule(finding, rules)
+        if rule_id:
+            finding["status"] = "intentional"
+            finding["rule_id"] = rule_id
+        else:
+            finding["status"] = "open"
+            finding.pop("rule_id", None)
+
     check_rec = {"id": uuid.uuid4().hex[:8], "title": chapter["title"], "text": chapter["text"], "findings": result["findings"], "source": result["source"]}
     project["checks"].append(check_rec)
     save(project)
@@ -149,13 +238,57 @@ def resolve(pid: str, cid: str, fid: str, req: ResolveReq):
         for f in c["findings"]:
             if f["id"] == fid:
                 f["status"] = req.status
-                key = f"{f['bible_entry']}：{f['bible_fact']} ⇄ {f['conflict_quote']}"
-                project["intentional"] = [d for d in project["intentional"] if d["finding_id"] != fid]
+                rules = project.setdefault("rules", [])
+                project["rules"] = [d for d in rules if d.get("from_finding") != fid]
+                f.pop("rule_id", None)
                 if req.status == "intentional":
-                    project["intentional"].append({"finding_id": fid, "text": key})
+                    rule = next(
+                        (
+                            d
+                            for d in project["rules"]
+                            if d.get("entry") == f.get("bible_entry") and d.get("fact") == f.get("bible_fact")
+                        ),
+                        None,
+                    )
+                    if rule is None:
+                        rule = {
+                            "id": uuid.uuid4().hex[:8],
+                            "kind": "intentional",
+                            "entry": f.get("bible_entry", ""),
+                            "fact": f.get("bible_fact", ""),
+                            "bible_quote": f.get("bible_quote", ""),
+                            "conflict_quote": f.get("conflict_quote", ""),
+                            "note": req.note.strip(),
+                            "from_finding": fid,
+                            "created": _now_iso(),
+                        }
+                        project["rules"].append(rule)
+                    elif req.note.strip():
+                        rule["note"] = req.note.strip()
+                    f["rule_id"] = rule["id"]
                 save(project)
                 return project
     raise HTTPException(404, "finding not found")
+
+
+@app.get("/api/projects/{pid}/rules")
+def get_rules(pid: str):
+    return {"rules": load(pid).get("rules", [])}
+
+
+@app.delete("/api/projects/{pid}/rules/{rid}")
+def delete_rule(pid: str, rid: str):
+    project = load(pid)
+    rules = project.get("rules", [])
+    if not any(rule.get("id") == rid for rule in rules):
+        raise HTTPException(404, "rule not found")
+    project["rules"] = [rule for rule in rules if rule.get("id") != rid]
+    for check_rec in project.get("checks", []):
+        for finding in check_rec.get("findings", []):
+            if finding.get("rule_id") == rid:
+                finding.pop("rule_id", None)
+                finding["status"] = "open"
+    return save(project)
 
 
 @app.post("/api/projects/{pid}/checks/{cid}/commit")

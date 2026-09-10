@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import uuid
+from difflib import SequenceMatcher
 from pathlib import Path
 from typing import Any
 
@@ -313,6 +314,43 @@ def merge_entries(bible: list[dict], new_entries: list[dict], chapter_title: str
             existing.add(fact)
             added += 1
     return added
+
+
+def match_rule(finding: dict, rules: list[dict]) -> str | None:
+    """Return the intentional-rule id matching a finding, if any.
+
+    Rules are intentionally conservative: entity names must match exactly,
+    then either the fact text or a verified bible quote must provide a stable
+    textual anchor. This keeps the filtering decision inspectable and avoids
+    treating a merely similar character name as an author's exception.
+    """
+    entry_name = (finding.get("bible_entry") or "").strip()
+    finding_fact = (finding.get("bible_fact") or "").strip()
+    finding_quote = (finding.get("bible_quote") or "").strip()
+    if not entry_name:
+        return None
+
+    def compact(value: str) -> str:
+        return re.sub(r"\s+", "", value)
+
+    for rule in rules:
+        if (rule.get("entry") or "").strip() != entry_name:
+            continue
+        rule_fact = (rule.get("fact") or "").strip()
+        rule_quote = (rule.get("bible_quote") or "").strip()
+        if rule_fact and finding_fact and rule_fact == finding_fact:
+            return rule.get("id")
+        if rule_quote and finding_quote and (rule_quote in finding_quote or finding_quote in rule_quote):
+            return rule.get("id")
+        left = compact(rule_fact)
+        right = compact(finding_fact)
+        if left and right:
+            common = SequenceMatcher(None, left, right).find_longest_match(
+                0, len(left), 0, len(right)
+            )
+            if common.size >= 12:
+                return rule.get("id")
+    return None
 
 
 def extract_chapter(bible: list[dict], n: int, chapter: dict, *, allow_cache: bool = True) -> dict:

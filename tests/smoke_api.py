@@ -79,11 +79,28 @@ def main() -> None:
         resolved = assert_ok(
             client.post(
                 f"/api/projects/{pid}/checks/{check['id']}/findings/{check['findings'][0]['id']}",
-                json={"status": "intentional"},
+                json={"status": "intentional", "note": "这是伏笔"},
             ),
             "mark finding intentional",
         )
-        assert len(resolved.get("intentional", [])) in (0, 1)
+        assert len(resolved.get("rules", [])) == 1
+        assert resolved["rules"][0]["note"] == "这是伏笔"
+
+        repeated = assert_ok(
+            client.post(
+                f"/api/projects/{pid}/check",
+                json={
+                    "title": sample["new_chapter_title"],
+                    "text": sample["new_chapter"],
+                    "use_cache": True,
+                },
+            ),
+            "re-check after adding intentional rule",
+        )
+        assert repeated["check"]["source"] == "cache"
+        repeated_findings = repeated["check"]["findings"]
+        assert sum(f["status"] == "intentional" and bool(f.get("rule_id")) for f in repeated_findings) == 1
+        assert sum(f["status"] == "open" for f in repeated_findings) == 8
 
         committed = assert_ok(
             client.post(
