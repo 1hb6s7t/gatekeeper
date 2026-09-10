@@ -1,7 +1,8 @@
 """Gatekeeper engine: chapter splitting, bible extraction, consistency check.
 
-Two real model providers (switch with GATEKEEPER_PROVIDER):
-  - "anthropic": official Anthropic Python SDK (reads ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_BASE_URL)
+Real model providers (switch with GATEKEEPER_PROVIDER):
+  - "openai": an OpenAI-compatible Chat Completions endpoint (non-streaming)
+  - "anthropic": official Anthropic Python SDK
   - "claude-cli": shells out to `claude -p` (Claude Code non-interactive mode)
 Plus "cache": replay pre-recorded responses for the bundled sample (no network).
 """
@@ -12,16 +13,21 @@ import json
 import os
 import re
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
-CACHE_DIR = ROOT / "data" / "cache"
+CACHE_DIR = Path(os.environ.get("GATEKEEPER_CACHE_DIR", str(ROOT / "data" / "cache")))
+if not CACHE_DIR.is_absolute():
+    CACHE_DIR = ROOT / CACHE_DIR
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL = os.environ.get("GATEKEEPER_MODEL", "claude-opus-5")
-PROVIDER = os.environ.get("GATEKEEPER_PROVIDER", "auto")  # auto | anthropic | claude-cli | cache
+OPENAI_BASE_URL = os.environ.get("GATEKEEPER_OPENAI_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
+OPENAI_MODEL = os.environ.get("GATEKEEPER_OPENAI_MODEL", "mimo-v2.5-pro")
+PROVIDER = os.environ.get("GATEKEEPER_PROVIDER", "auto")  # auto | openai | anthropic | claude-cli | cache
 
 ENTRY_TYPES = ["character", "location", "item", "timeline"]
 TYPE_LABEL = {"character": "角色", "location": "地点", "item": "物品", "timeline": "时间线"}
@@ -80,24 +86,86 @@ def _call_claude_cli(prompt: str, system: str) -> str:
     return r.stdout
 
 
-def call_model(kind: str, prompt: str, system: str, *, allow_cache: bool = True) -> tuple[str, str]:
-    """Return (raw_text, source) where source in {anthropic, claude-cli, cache}."""
+def _call_openai(prompt: str, system: str) -> str:
+    """Call an OpenAI-compatible endpoint without asking it for an event stream.
+
+    Some compatibility gateways always return SSE when the request is streamed,
+    and then answer the SDK's fallback request with SSE as well.  Gatekeeper
+    deliberately makes a regular Chat Completions request here so the SDK can
+    decode one JSON response deterministically.
+    """
+    from openai import OpenAI
+
+    api_key = os.environ.get("GATEKEEPER_OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError("未设置 GATEKEEPER_OPENAI_API_KEY")
+    client = OpenAI(base_url=OPENAI_BASE_URL, api_key=api_key, timeout=600)
+    response = client.chat.completions.create(
+        model=OPENAI_MODEL,
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
+        max_tokens=8000,
+        temperature=0,
+        stream=False,
+    )
+    choices = getattr(response, "choices", None) or []
+    if not choices:
+        raise RuntimeError("OpenAI 兼容 API 返回空 choices")
+    choice = choices[0]
+    if getattr(choice, "finish_reason", None) == "length":
+        raise RuntimeError("输出被截断")
+    content = getattr(getattr(choice, "message", None), "content", None)
+    if not isinstance(content, str) or not content.strip():
+        raise RuntimeError("OpenAI 兼容 API 返回空文本")
+    return content
+
+
+def _provider_order() -> list[str]:
+    if PROVIDER == "auto":
+        order = []
+        if os.environ.get("GATEKEEPER_OPENAI_API_KEY"):
+            order.append("openai")
+        order.extend(["anthropic", "claude-cli"])
+        return order
+    return [PROVIDER]
+
+
+def call_model(
+    kind: str,
+    prompt: str,
+    system: str,
+    *,
+    allow_cache: bool = True,
+    retries: int = 0,
+) -> tuple[str, str]:
+    """Return (raw_text, source), retrying provider failures when requested."""
     key = _cache_key(kind, prompt)
     if allow_cache and key.exists():
         return key.read_text(encoding="utf-8"), "cache"
     provider = PROVIDER
     if provider == "cache":
         raise RuntimeError("cache miss and provider=cache")
-    errors = []
-    order = ["anthropic", "claude-cli"] if provider == "auto" else [provider]
-    for p in order:
-        try:
-            out = _call_anthropic(prompt, system) if p == "anthropic" else _call_claude_cli(prompt, system)
-            key.write_text(out, encoding="utf-8")
-            return out, p
-        except Exception as e:  # noqa: BLE001 - fall through to next provider
-            errors.append(f"{p}: {e}")
-    raise RuntimeError(" | ".join(errors))
+    dispatch = {
+        "openai": _call_openai,
+        "anthropic": _call_anthropic,
+        "claude-cli": _call_claude_cli,
+    }
+    order = _provider_order()
+    if not order or any(p not in dispatch for p in order):
+        raise RuntimeError(f"未知模型通道：{provider}")
+    last_errors: list[str] = []
+    for _attempt in range(max(0, retries) + 1):
+        errors = []
+        for p in order:
+            try:
+                out = dispatch[p](prompt, system)
+                if not isinstance(out, str) or not out.strip():
+                    raise RuntimeError("模型返回空文本")
+                key.write_text(out, encoding="utf-8")
+                return out, p
+            except Exception as e:  # noqa: BLE001 - fall through to next provider
+                errors.append(f"{p}: {e}")
+        last_errors = errors
+    raise RuntimeError(" | ".join(last_errors))
 
 
 def parse_json(raw: str) -> Any:
@@ -113,6 +181,39 @@ def parse_json(raw: str) -> Any:
         # trim trailing junk after last closing bracket
         end = max(raw.rfind("}"), raw.rfind("]"))
         return json.loads(raw[: end + 1])
+
+
+def _print_parse_retry(raw: str) -> None:
+    """Print a bounded malformed response without breaking on a GBK terminal."""
+    message = f"OpenAI 返回不是完整 JSON，准备重试；原始输出前 300 字：{raw[:300]}"
+    try:
+        print(message, file=sys.stderr)
+    except UnicodeEncodeError:
+        sys.stderr.buffer.write((message + "\n").encode("utf-8", errors="replace"))
+
+
+def _parse_model_json(
+    kind: str,
+    prompt: str,
+    system: str,
+    *,
+    allow_cache: bool,
+) -> tuple[Any, str]:
+    raw, source = call_model(kind, prompt, system, allow_cache=allow_cache)
+    try:
+        return parse_json(raw), source
+    except (TypeError, ValueError, json.JSONDecodeError):
+        if source != "openai":
+            raise
+        _print_parse_retry(raw)
+        retry_raw, retry_source = call_model(
+            kind,
+            prompt,
+            system,
+            allow_cache=False,
+            retries=1,
+        )
+        return parse_json(retry_raw), retry_source
 
 
 # ---------------------------------------------------------------- prompts
@@ -216,8 +317,7 @@ def merge_entries(bible: list[dict], new_entries: list[dict], chapter_title: str
 
 def extract_chapter(bible: list[dict], n: int, chapter: dict, *, allow_cache: bool = True) -> dict:
     prompt = EXTRACT_PROMPT.format(n=n, title=chapter["title"], bible=compact_bible(bible, with_quotes=False), text=chapter["text"])
-    raw, source = call_model("extract", prompt, SYSTEM, allow_cache=allow_cache)
-    data = parse_json(raw)
+    data, source = _parse_model_json("extract", prompt, SYSTEM, allow_cache=allow_cache)
     added = merge_entries(bible, data.get("entries", []), chapter["title"], chapter["text"])
     return {"added": added, "source": source}
 
@@ -227,8 +327,7 @@ def check_chapter(bible: list[dict], n: int, chapter: dict, intentional: list[st
         n=n, title=chapter["title"], bible=compact_bible(bible), text=chapter["text"],
         intentional="\n".join(f"- {s}" for s in intentional) or "（无）",
     )
-    raw, source = call_model("check", prompt, SYSTEM, allow_cache=allow_cache)
-    data = parse_json(raw)
+    data, source = _parse_model_json("check", prompt, SYSTEM, allow_cache=allow_cache)
     findings = []
     all_quotes = [f["quote"] for e in bible for f in e["facts"] if f.get("quote")]
     for f in data.get("findings", []):
