@@ -386,6 +386,91 @@ def delete_fact(pid: str, eid: str, fid: str):
     return save(project)
 
 
+def _md_inline(value: object) -> str:
+    return str(value or "").replace("\r", "").replace("\n", " ").strip()
+
+
+def _export_markdown(project: dict) -> str:
+    lines = [f"# {_md_inline(project.get('title') or '未命名作品')}", ""]
+    lines.extend(["## 章节", ""])
+    for i, chapter in enumerate(project.get("chapters", []), 1):
+        state = "已抽取" if chapter.get("extracted") else "待抽取"
+        lines.append(f"{i}. **{_md_inline(chapter.get('title'))}** · {len(chapter.get('text', ''))} 字 · {state}")
+    warnings = project.get("warnings") or []
+    if warnings:
+        lines.extend(["", "> **长度提示**", *[f"> - {_md_inline(warning)}" for warning in warnings]])
+
+    lines.extend(["", "## 设定库", ""])
+    order = ["character", "location", "item", "timeline"]
+    labels = engine.TYPE_LABEL
+    entries = sorted(project.get("bible", []), key=lambda entry: order.index(entry.get("type")) if entry.get("type") in order else len(order))
+    if not entries:
+        lines.append("（空）")
+    for entry in entries:
+        lines.extend([f"### {labels.get(entry.get('type'), entry.get('type', ''))}：{_md_inline(entry.get('name'))}", ""])
+        for fact in entry.get("facts", []):
+            text = _md_inline(fact.get("fact"))
+            if fact.get("change"):
+                text += f"（变更：{_md_inline(fact['change'].get('from'))} → {_md_inline(fact['change'].get('to'))}）"
+            verified = "已核验" if fact.get("quote_verified") else "未核验"
+            lines.append(f"- ({_md_inline(fact.get('chapter'))}) {text} · 引用{verified}")
+            if fact.get("quote"):
+                lines.append(f"  - 原文：「{_md_inline(fact.get('quote'))}」")
+        lines.append("")
+
+    rules = project.get("rules", [])
+    lines.extend(["## 有意为之规则", ""])
+    if not rules:
+        lines.append("（无）")
+    else:
+        for rule in rules:
+            lines.append(f"- **{_md_inline(rule.get('entry'))}**：{_md_inline(rule.get('fact'))}")
+            if rule.get("note"):
+                lines.append(f"  - 备注：{_md_inline(rule.get('note'))}")
+        lines.append("")
+
+    lines.extend(["## 最近一次检查", ""])
+    checks = project.get("checks", [])
+    if not checks:
+        lines.append("（尚未检查）")
+    else:
+        check = checks[-1]
+        lines.extend([
+            f"### {_md_inline(check.get('title'))}",
+            f"来源：{_md_inline(check.get('source'))} · 发现 {len(check.get('findings', []))} 条",
+            "",
+        ])
+        severity = {"high": "高", "medium": "中", "low": "低"}
+        statuses = {"open": "待处理", "accepted": "已采纳", "ignored": "已忽略", "intentional": "有意为之"}
+        findings = sorted(check.get("findings", []), key=lambda item: {"high": 0, "medium": 1, "low": 2}.get(item.get("severity"), 3))
+        if not findings:
+            lines.append("没有发现矛盾。")
+        for finding in findings:
+            state = statuses.get(finding.get("status"), finding.get("status", "待处理"))
+            lines.append(f"- **[{severity.get(finding.get('severity'), finding.get('severity', '中'))}] {state}** {_md_inline(finding.get('bible_entry'))} · {_md_inline(finding.get('bible_chapter'))}：{_md_inline(finding.get('bible_fact'))}")
+            if finding.get("bible_quote"):
+                lines.append(f"  - 设定引用：「{_md_inline(finding.get('bible_quote'))}」")
+            if finding.get("conflict_quote"):
+                lines.append(f"  - 新章引用：「{_md_inline(finding.get('conflict_quote'))}」")
+            if finding.get("explanation"):
+                lines.append(f"  - 说明：{_md_inline(finding.get('explanation'))}")
+            if finding.get("suggestion"):
+                lines.append(f"  - 建议：{_md_inline(finding.get('suggestion'))}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+@app.get("/api/projects/{pid}/export.md")
+def export_markdown(pid: str):
+    project = load(pid)
+    title = _md_inline(project.get("title") or "gatekeeper") or "gatekeeper"
+    filename = quote(f"{title}.md", safe="")
+    return Response(
+        content=_export_markdown(project),
+        media_type="text/markdown",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
+
+
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 

@@ -147,6 +147,12 @@ def main() -> None:
             "commit chapter",
         )
         assert len(committed["chapters"]) == 6
+
+        exported = client.get(f"/api/projects/{pid}/export.md")
+        assert exported.status_code == 200, exported.text[:500]
+        assert "林砚" in exported.text
+        assert "第六章 云州夜雨" in exported.text
+        assert "手工事实修订" in exported.text
         print("smoke_api: PASS")
     finally:
         if project_path.exists():
