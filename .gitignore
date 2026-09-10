@@ -1,0 +1,4 @@
+data/projects/
+data/*.log
+__pycache__/
+*.pyc

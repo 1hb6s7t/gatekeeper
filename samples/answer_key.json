@@ -1,0 +1,19 @@
+{
+  "note": "第六章预埋的 10 处矛盾。keyword 出现在 finding 的 conflict_quote 或 explanation 中即视为命中。",
+  "bugs": [
+    {"id": 1, "type": "character", "keywords": ["右眼下"], "truth": "第一章：左眼下有一道两寸长的旧疤"},
+    {"id": 2, "type": "fact", "keywords": ["十五岁"], "truth": "第一章：他今年十七岁"},
+    {"id": 3, "type": "time", "keywords": ["整整一个月"], "truth": "第五章：从青崖镇那夜到今天，一共九天；第六章是次日夜"},
+    {"id": 4, "type": "item", "keywords": ["从怀里摸出", "摸出母亲的青玉佩"], "truth": "第四章：玉佩已交给苏棠收进荷包；第六章末尾苏棠还从荷包里拿出玉佩"},
+    {"id": 5, "type": "location", "keywords": ["镇西的渡口"], "truth": "第一章：镇东是渡口，镇西是集市"},
+    {"id": 6, "type": "character", "keywords": ["右手提着剑"], "truth": "第三章、第五章：苏棠使左手剑"},
+    {"id": 7, "type": "fact", "keywords": ["毫无滞碍", "右臂抬起来"], "truth": "第三章：右臂伤没有一个月好不了；此时仅过去十天左右"},
+    {"id": 8, "type": "item", "keywords": ["父亲留下的铁鸦"], "truth": "第二章：铁鸦是师父陈瘸子所赠"},
+    {"id": 9, "type": "location", "keywords": ["北门", "从北门骑马进城"], "truth": "第四章：云州城只有南门有桥可入，其余三面无桥"},
+    {"id": 10, "type": "fact", "keywords": ["一点伤都没有", "身上一点伤"], "truth": "第五章：黑袍人左肩被剑刺穿；第六章自相矛盾（苏棠自己也质疑，可算 medium）"}
+  ],
+  "traps": [
+    {"desc": "苏棠从荷包里拿出玉佩推回——与第四章一致，不应报", "keywords": ["从贴身的荷包里摸出那块青玉佩"]},
+    {"desc": "『右手的铁指环』在第六章未出现，不应凭空报", "keywords": ["铁指环"]}
+  ]
+}

@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>守门人 Gatekeeper</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{--paper:#F4F5F2;--ink:#1C2128;--muted:#5B6470;--line:#D6DAD5;--panel:#FFFFFF;--accent:#1F5F6B;--accent-soft:#E2EEF0;--warn:#B7791F;--warn-soft:#F7EEDC;--good:#3C7A4E;--good-soft:#E3EFE5;--bad:#9B3F3F;--bad-soft:#F5E3E3;--mark:#FFF3B0;
+--serif:"Noto Serif SC","Songti SC","SimSun",serif;--sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;--mono:"IBM Plex Mono",Menlo,Consolas,monospace}
+@media (prefers-color-scheme:dark){:root{--paper:#15181D;--ink:#E4E6E1;--muted:#9AA3AD;--line:#2C323A;--panel:#1C2026;--accent:#6FB7C4;--accent-soft:#1B2E33;--warn:#D9A24A;--warn-soft:#332A18;--good:#7CBF8E;--good-soft:#1B2F22;--bad:#D98484;--bad-soft:#33201F;--mark:#4A4320}}
+*{box-sizing:border-box}html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.6;display:flex;flex-direction:column}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:5px;padding:6px 12px}
+button:hover{border-color:var(--accent)}button:disabled{opacity:.5;cursor:default}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}button.primary:hover{filter:brightness(1.08)}
+button.sm{padding:3px 9px;font-size:12.5px}
+textarea{font:inherit;font-size:13.5px;line-height:1.7;width:100%;resize:vertical;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);padding:10px}
+input[type=text]{font:inherit;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--ink);padding:6px 10px}
+header{display:flex;align-items:center;gap:16px;padding:12px 22px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-family:var(--serif);font-size:19px;margin:0;font-weight:700}
+header .tag{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:.06em}
+header .spacer{flex:1}
+#meta{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+main{flex:1;display:grid;grid-template-columns:300px minmax(0,1fr) 380px;min-height:0}
+@media (max-width:1100px){main{grid-template-columns:1fr;overflow:auto}section{border-right:none!important;border-bottom:1px solid var(--line)}}
+section{display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--line)}
+section:last-child{border-right:none}
+.sec-h{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.sec-h h2{font-family:var(--serif);font-size:15px;margin:0;font-weight:700}.sec-h .cnt{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+.sec-h .spacer{flex:1}
+.body{padding:14px;overflow:auto;flex:1}
+.chap{padding:8px 10px;border:1px solid var(--line);border-radius:5px;background:var(--panel);margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.chap .t{flex:1;font-weight:500}.chap .n{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.pill{display:inline-block;padding:0 7px;border-radius:999px;font-size:11.5px;font-weight:500;white-space:nowrap;line-height:1.6}
+.pill.good{background:var(--good-soft);color:var(--good)}.pill.warn{background:var(--warn-soft);color:var(--warn)}.pill.bad{background:var(--bad-soft);color:var(--bad)}.pill.acc{background:var(--accent-soft);color:var(--accent)}.pill.mute{background:var(--line);color:var(--muted)}
+.entry{margin-bottom:14px}
+.entry h4{margin:0 0 4px;font-size:13.5px;display:flex;align-items:center;gap:6px}
+.entry h4 .ty{font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.06em}
+.fact{padding:5px 8px;border-left:2px solid var(--line);margin:0 0 5px 4px;font-size:13px}
+.fact:hover{border-left-color:var(--accent)}
+.fact .ch{font-family:var(--mono);font-size:11px;color:var(--muted);margin-right:6px}
+.fact .q{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.fact .q::before{content:"引 "}
+.fact .del{float:right;font-size:11px;color:var(--muted);background:none;border:none;padding:0 4px}
+.fact .del:hover{color:var(--bad)}
+.finding{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;margin-bottom:10px;border-left-width:4px}
+.finding.high{border-left-color:var(--bad)}.finding.medium{border-left-color:var(--warn)}.finding.low{border-left-color:var(--muted)}
+.finding.done{opacity:.55}
+.finding .hd{display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12.5px}
+.finding .hd .spacer{flex:1}
+.finding .ex{font-weight:500;margin-bottom:6px}
+.finding .ev{font-size:12.5px;color:var(--muted);margin-bottom:3px}
+.finding .ev b{color:var(--ink);font-weight:500}
+.finding .ev .q{background:var(--mark);color:var(--ink);padding:0 3px;border-radius:2px;cursor:pointer}
+.finding .sug{font-size:12.5px;margin-top:6px;padding:6px 8px;background:var(--accent-soft);border-radius:4px}
+.finding .acts{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.status{font-family:var(--mono);font-size:11.5px;color:var(--muted);padding:6px 14px;border-top:1px solid var(--line);background:var(--panel);min-height:30px}
+.status.err{color:var(--bad)}
+.hint{color:var(--muted);font-size:13px}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.toolbar label{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:4px}
+.empty{color:var(--muted);text-align:center;padding:30px 10px;font-size:13px}
+mark.hl{background:var(--mark);color:inherit}
+#reader{white-space:pre-wrap;font-size:13.5px;line-height:1.8;font-family:var(--serif)}
+.summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.summary .tile{background:var(--panel);border:1px solid var(--line);border-radius:5px;padding:6px 12px;font-size:12.5px}
+.summary .tile b{font-family:var(--mono);font-size:16px;display:block}
+.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);background:var(--panel);padding:0 10px}
+.tabs button{border:none;background:none;border-bottom:2px solid transparent;border-radius:0;padding:8px 10px;color:var(--muted)}
+.tabs button.on{color:var(--ink);border-bottom-color:var(--accent)}
+.busy{display:inline-block;width:12px;height:12px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <h1>守门人</h1><span class="tag">GATEKEEPER · 长篇设定与连续性核对</span>
+  <span class="spacer"></span>
+  <span id="meta"></span>
+</header>
+
+<main>
+<!-- LEFT: manuscript & chapters -->
+<section>
+  <div class="sec-h"><h2>稿件</h2><span class="cnt" id="chapCount"></span><span class="spacer"></span><button class="sm" id="btnSample">载入示例</button></div>
+  <div class="body" id="left">
+    <div id="newProj">
+      <input type="text" id="title" placeholder="作品名" style="width:100%;margin-bottom:8px">
+      <textarea id="manuscript" rows="14" placeholder="粘贴已写章节，按「第N章」自动切分"></textarea>
+      <div class="toolbar" style="margin-top:8px"><button class="primary" id="btnCreate">切分章节</button><span class="hint">不上传到任何账号，保存在本机 data/ 目录</span></div>
+    </div>
+    <div id="chapters" hidden></div>
+  </div>
+  <div class="status" id="leftStatus"></div>
+</section>
+
+<!-- MIDDLE: bible / new chapter -->
+<section>
+  <div class="tabs"><button class="on" data-tab="bible">设定库</button><button data-tab="newch">新章节</button><button data-tab="reader">原文</button></div>
+  <div class="body" id="mid">
+    <div id="tab-bible">
+      <div class="toolbar"><button class="primary" id="btnExtractAll">建立设定库</button><label><input type="checkbox" id="useCache" checked> 允许使用缓存结果</label><span class="cnt" id="bibleCount"></span></div>
+      <div id="bible"><div class="empty">切分章节后，点「建立设定库」逐章抽取角色、地点、物品、时间线。每条事实附来源章节与原文引用。</div></div>
+    </div>
+    <div id="tab-newch" hidden>
+      <input type="text" id="newTitle" placeholder="新章节标题" style="width:100%;margin-bottom:8px">
+      <textarea id="newText" rows="22" placeholder="粘贴刚写完的新章节"></textarea>
+      <div class="toolbar" style="margin-top:8px"><button class="primary" id="btnCheck">检查矛盾</button><button id="btnCommit" disabled>确认无误，并入稿件</button></div>
+    </div>
+    <div id="tab-reader" hidden><div id="reader" class="empty">在右侧点击引用，会在这里高亮原文。</div></div>
+  </div>
+  <div class="status" id="midStatus"></div>
+</section>
+
+<!-- RIGHT: findings -->
+<section>
+  <div class="sec-h"><h2>矛盾清单</h2><span class="cnt" id="findCount"></span><span class="spacer"></span><button class="sm" id="btnEval" hidden>对照答案卡</button></div>
+  <div class="body" id="findings"><div class="empty">建立设定库后，在「新章节」里粘贴稿件并检查。</div></div>
+  <div class="status" id="rightStatus"></div>
+</section>
+</main>
+
+<script>
+const $=s=>document.querySelector(s);
+const state={project:null,check:null,sample:null,tab:'bible'};
+const TYPE={character:'角色',location:'地点',item:'物品',timeline:'时间线',fact:'事实',time:'时间'};
+const SEV={high:'高',medium:'中',low:'低'};
+const SRC={anthropic:'Anthropic API',"claude-cli":'claude -p',cache:'缓存'};
+
+async function api(path,opt={}){const r=await fetch('/api'+path,{headers:{'content-type':'application/json'},...opt});if(!r.ok){let m=r.statusText;try{m=(await r.json()).detail||m}catch{}throw new Error(m)}return r.json()}
+function status(id,msg,err=false,busy=false){const el=$(id);el.className='status'+(err?' err':'');el.innerHTML=(busy?'<span class="busy"></span>':'')+msg}
+function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+// ------------ tabs
+document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+function showTab(t){state.tab=t;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));['bible','newch','reader'].forEach(x=>$('#tab-'+x).hidden=x!==t)}
+
+// ------------ meta & sample
+api('/meta').then(m=>{$('#meta').textContent=`provider ${m.provider} · model ${m.model}`}).catch(()=>{});
+$('#btnSample').onclick=async()=>{state.sample=await api('/sample');$('#title').value=state.sample.title;$('#manuscript').value=state.sample.manuscript;$('#newTitle').value=state.sample.new_chapter_title;$('#newText').value=state.sample.new_chapter;status('#leftStatus','示例已载入：5 章 + 预埋 10 处矛盾的第六章。抽取与检查结果有缓存，无 API 也能跑通。');$('#btnEval').hidden=false};
+
+// ------------ project
+$('#btnCreate').onclick=async()=>{try{status('#leftStatus','切分中…',false,true);state.project=await api('/projects',{method:'POST',body:JSON.stringify({title:$('#title').value||'未命名作品',text:$('#manuscript').value})});renderProject();status('#leftStatus',`已切分 ${state.project.chapters.length} 章`)}catch(e){status('#leftStatus',e.message,true)}};
+
+function renderProject(){const p=state.project;$('#newProj').hidden=true;$('#chapters').hidden=false;$('#chapCount').textContent=`${p.title} · ${p.chapters.length} 章`;
+$('#chapters').innerHTML=p.chapters.map((c,i)=>`<div class="chap"><span class="t">${esc(c.title)}</span><span class="n">${c.text.length} 字</span>${c.extracted?'<span class="pill good">已抽取</span>':`<button class="sm" data-i="${i}">抽取</button>`}</div>`).join('');
+$('#chapters').querySelectorAll('button').forEach(b=>b.onclick=()=>extractOne(+b.dataset.i));renderBible()}
+
+async function extractOne(i){const p=state.project,c=p.chapters[i];try{status('#midStatus',`抽取 ${c.title}…`,false,true);const r=await api(`/projects/${p.id}/extract`,{method:'POST',body:JSON.stringify({chapter_index:i,use_cache:$('#useCache').checked})});state.project=r.project;renderProject();status('#midStatus',`${c.title}：+${r.added} 条事实 · 来源 ${SRC[r.source]||r.source}`);return true}catch(e){status('#midStatus',e.message,true);return false}}
+$('#btnExtractAll').onclick=async()=>{if(!state.project){status('#midStatus','先切分章节',true);return}for(let i=0;i<state.project.chapters.length;i++){if(state.project.chapters[i].extracted)continue;if(!await extractOne(i))return}status('#midStatus','设定库已建立。切到「新章节」检查。')};
+
+function renderBible(){const p=state.project;const facts=p.bible.reduce((n,e)=>n+e.facts.length,0);$('#bibleCount').textContent=p.bible.length?`${p.bible.length} 个实体 · ${facts} 条事实`:'';
+if(!p.bible.length){$('#bible').innerHTML='<div class="empty">点「建立设定库」开始抽取。</div>';return}
+const order=['character','location','item','timeline'];const sorted=[...p.bible].sort((a,b)=>order.indexOf(a.type)-order.indexOf(b.type));
+$('#bible').innerHTML=sorted.map(e=>`<div class="entry"><h4><span class="ty">${TYPE[e.type]}</span>${esc(e.name)}</h4>${e.facts.map(f=>`<div class="fact"><button class="del" title="删除这条事实" data-e="${e.id}" data-f="${f.id}">×</button><span class="ch">${esc(f.chapter)}</span>${esc(f.fact)}${f.quote?`<span class="q ${f.quote_verified?'':'unv'}" data-q="${esc(f.quote)}" data-ch="${esc(f.chapter)}" style="cursor:pointer">「${esc(f.quote)}」${f.quote_verified?'':' <span class="pill warn">引用未在原文逐字命中</span>'}</span>`:''}</div>`).join('')}</div>`).join('');
+$('#bible').querySelectorAll('.del').forEach(b=>b.onclick=async()=>{state.project=await api(`/projects/${p.id}/bible/${b.dataset.e}/facts/${b.dataset.f}`,{method:'DELETE'});renderBible()});
+$('#bible').querySelectorAll('.q').forEach(q=>q.onclick=()=>showQuote(q.dataset.ch,q.dataset.q))}
+
+function showQuote(chapterTitle,quote){const p=state.project;let src=null;if(state.check&&state.check.title===chapterTitle)src=state.check.text;else{const c=p.chapters.find(c=>c.title===chapterTitle);src=c?c.text:null}
+if(src==null){src=p.chapters.map(c=>c.title+'\n'+c.text).join('\n\n')}
+const i=quote?src.indexOf(quote):-1;let html=esc(src);if(i>=0)html=esc(src.slice(0,i))+'<mark class="hl" id="hl">'+esc(quote)+'</mark>'+esc(src.slice(i+quote.length));
+$('#reader').className='';$('#reader').innerHTML=`<div class="hint" style="margin-bottom:8px">${esc(chapterTitle)}${i<0?' · <span class="pill warn">未找到逐字引用</span>':''}</div>`+html;showTab('reader');const m=$('#hl');if(m)m.scrollIntoView({block:'center'})}
+
+// ------------ check
+$('#btnCheck').onclick=async()=>{const p=state.project;if(!p){status('#rightStatus','先切分章节并建立设定库',true);return}try{status('#rightStatus','对照设定库检查中…',false,true);const r=await api(`/projects/${p.id}/check`,{method:'POST',body:JSON.stringify({title:$('#newTitle').value||'新章节',text:$('#newText').value,use_cache:$('#useCache').checked})});state.project=r.project;state.check=r.check;renderFindings();$('#btnCommit').disabled=false;status('#rightStatus',`${r.check.findings.length} 条 · 来源 ${SRC[r.check.source]||r.check.source}`)}catch(e){status('#rightStatus',e.message,true)}};
+$('#btnCommit').onclick=async()=>{const p=state.project;state.project=await api(`/projects/${p.id}/checks/${state.check.id}/commit`,{method:'POST'});renderProject();$('#btnCommit').disabled=true;status('#midStatus','已并入稿件，可在左侧对新章节抽取，更新设定库。')};
+
+function renderFindings(){const c=state.check;if(!c){return}const fs=c.findings;const open=fs.filter(f=>f.status==='open').length;$('#findCount').textContent=`${fs.length} 条 · ${open} 待处理`;
+if(!fs.length){$('#findings').innerHTML='<div class="empty">没有发现与设定库矛盾的地方。</div>';return}
+const sev={high:0,medium:1,low:2};const sorted=[...fs].sort((a,b)=>sev[a.severity]-sev[b.severity]);
+$('#findings').innerHTML=sorted.map(f=>`<div class="finding ${f.severity} ${f.status!=='open'?'done':''}" id="f-${f.id}">
+<div class="hd"><span class="pill ${f.severity==='high'?'bad':f.severity==='medium'?'warn':'mute'}">${SEV[f.severity]}</span><span class="pill acc">${TYPE[f.type]||f.type}</span><span class="spacer"></span>${f.status!=='open'?`<span class="pill mute">${{accepted:'已采纳',ignored:'已忽略',intentional:'有意为之'}[f.status]}</span>`:''}</div>
+<div class="ex">${esc(f.explanation)}</div>
+<div class="ev"><b>设定</b> ${esc(f.bible_entry)} · ${esc(f.bible_chapter)}：${esc(f.bible_fact)}${f.bible_quote?` <span class="q" data-ch="${esc(f.bible_chapter)}" data-q="${esc(f.bible_quote)}">「${esc(f.bible_quote)}」</span>`:''}</div>
+<div class="ev"><b>新章</b> <span class="q" data-ch="${esc(c.title)}" data-q="${esc(f.conflict_quote)}">「${esc(f.conflict_quote)}」</span>${f.conflict_verified?'':' <span class="pill warn">引用未逐字命中</span>'}</div>
+<div class="sug">建议：${esc(f.suggestion)}</div>
+<div class="acts"><button class="sm" data-s="accepted" data-f="${f.id}">采纳</button><button class="sm" data-s="intentional" data-f="${f.id}">有意为之，以后不报</button><button class="sm" data-s="ignored" data-f="${f.id}">忽略</button>${f.status!=='open'?`<button class="sm" data-s="open" data-f="${f.id}">恢复</button>`:''}</div></div>`).join('');
+$('#findings').querySelectorAll('[data-s]').forEach(b=>b.onclick=async()=>{const p=state.project;state.project=await api(`/projects/${p.id}/checks/${c.id}/findings/${b.dataset.f}`,{method:'POST',body:JSON.stringify({status:b.dataset.s})});state.check=state.project.checks.find(x=>x.id===c.id);renderFindings()});
+$('#findings').querySelectorAll('.q').forEach(q=>q.onclick=()=>showQuote(q.dataset.ch,q.dataset.q))}
+
+// ------------ eval against answer key (sample only)
+$('#btnEval').onclick=()=>{if(!state.check||!state.sample){status('#rightStatus','先对示例第六章运行检查',true);return}const key=state.sample.answer_key;const fs=state.check.findings;const matched={};
+for(const f of fs){for(const b of key.bugs){if(matched[b.id])continue;const hay=f.conflict_quote+' '+f.explanation;if(b.keywords.some(k=>hay.includes(k))){matched[b.id]=f.id}}}
+const hitIds=new Set(Object.values(matched));const fp=fs.filter(f=>!hitIds.has(f.id));
+const html=`<div class="summary"><div class="tile"><b>${Object.keys(matched).length}/${key.bugs.length}</b>预埋矛盾召回</div><div class="tile"><b>${fp.length}</b>答案卡外的发现</div><div class="tile"><b>${fs.filter(f=>f.conflict_verified).length}/${fs.length}</b>引用逐字命中</div></div>
+<div style="font-size:12.5px">${key.bugs.map(b=>`<div>${matched[b.id]?'✓':'✗'} #${b.id} ${TYPE[b.type]} · ${esc(b.truth)}</div>`).join('')}</div><div class="hint" style="margin-top:8px">答案卡外的发现需要人工复核：可能是误报，也可能是答案卡没覆盖的真矛盾。</div>`;
+$('#findings').insertAdjacentHTML('afterbegin',`<div class="finding low" style="border-left-color:var(--accent)">${html}</div>`)};
+</script>
+</body>
+</html>
