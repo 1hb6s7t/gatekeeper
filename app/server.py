@@ -370,7 +370,7 @@ def update_fact(pid: str, eid: str, fid: str, req: BibleFactPatch):
                 None,
             )
             fact_record["quote_verified"] = bool(fact_record.get("quote")) and bool(
-                source and fact_record["quote"] in source.get("text", "")
+                source and engine.quote_in(source.get("text", ""), fact_record["quote"])
             )
             return save(project)
     raise HTTPException(404, "fact not found")

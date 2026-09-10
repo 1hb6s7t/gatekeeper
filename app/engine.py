@@ -96,13 +96,17 @@ def _call_claude_cli(prompt: str, system: str) -> str:
     return r.stdout
 
 
-def _call_openai(prompt: str, system: str) -> str:
+def _call_openai(prompt: str, system: str, *, max_tokens: int = 8000) -> str:
     """Call an OpenAI-compatible endpoint without asking it for an event stream.
 
     Some compatibility gateways always return SSE when the request is streamed,
     and then answer the SDK's fallback request with SSE as well.  Gatekeeper
     deliberately makes a regular Chat Completions request here so the SDK can
     decode one JSON response deterministically.
+
+    max_tokens is raised on truncation retries (hidden reasoning tokens on this
+    gateway compete with the output budget, so retrying with the same cap at
+    temperature 0 would truncate identically).
     """
     from openai import OpenAI
 
@@ -113,7 +117,7 @@ def _call_openai(prompt: str, system: str) -> str:
     response = client.chat.completions.create(
         model=OPENAI_MODEL,
         messages=[{"role": "system", "content": system}, {"role": "user", "content": prompt}],
-        max_tokens=8000,
+        max_tokens=max_tokens,
         temperature=0,
         stream=False,
     )
@@ -173,6 +177,17 @@ def call_model(
                 key.write_text(out, encoding="utf-8")
                 return out, p
             except Exception as e:  # noqa: BLE001 - fall through to next provider
+                if p == "openai" and isinstance(e, RuntimeError) and "输出被截断" in str(e):
+                    _print_stderr("OpenAI 兼容 API 输出被截断（finish_reason=length），增大 max_tokens 重试一次")
+                    try:
+                        out = _call_openai(prompt, system, max_tokens=16000)
+                        if not isinstance(out, str) or not out.strip():
+                            raise RuntimeError("模型返回空文本")
+                        key.write_text(out, encoding="utf-8")
+                        return out, p
+                    except Exception as e2:  # noqa: BLE001
+                        errors.append(f"openai(截断重试): {e2}")
+                        continue
                 errors.append(f"{p}: {e}")
         last_errors = errors
     raise RuntimeError(" | ".join(last_errors))
@@ -193,13 +208,27 @@ def parse_json(raw: str) -> Any:
         return json.loads(raw[: end + 1])
 
 
-def _print_parse_retry(raw: str) -> None:
-    """Print a bounded malformed response without breaking on a GBK terminal."""
-    message = f"OpenAI 返回不是完整 JSON，准备重试；原始输出前 300 字：{raw[:300]}"
+def _print_stderr(message: str) -> None:
+    """Print a bounded diagnostic without breaking on a GBK terminal."""
     try:
         print(message, file=sys.stderr)
     except UnicodeEncodeError:
         sys.stderr.buffer.write((message + "\n").encode("utf-8", errors="replace"))
+
+
+def _print_parse_retry(raw: str) -> None:
+    _print_stderr(f"OpenAI 返回不是完整 JSON，准备重试；原始输出前 300 字：{raw[:300]}")
+
+
+def quote_in(text: str, quote: str) -> bool:
+    """Whether quote appears verbatim in text, ignoring wrapper quote marks.
+
+    Some models wrap every quote in full-width corner brackets (「」) even when
+    the manuscript uses no such marks; a strict substring check would then flag
+    verbatim evidence as unverified.
+    """
+    q = (quote or "").strip().strip("「」『』“”‘’\"'").strip()
+    return bool(q) and q in text
 
 
 def _parse_model_json(
@@ -371,7 +400,7 @@ def merge_entries(
                 "id": uuid.uuid4().hex[:8],
                 "fact": fact,
                 "quote": quote,
-                "quote_verified": bool(quote) and quote in chapter_text,
+                "quote_verified": bool(quote) and quote_in(chapter_text, quote),
                 "chapter": chapter_title,
                 "chapter_no": chapter_number(fact, current_chapter_no),
             }
@@ -449,9 +478,9 @@ def check_chapter(bible: list[dict], n: int, chapter: dict, intentional: list[st
             "bible_fact": f.get("bible_fact", ""),
             "bible_chapter": f.get("bible_chapter", ""),
             "bible_quote": bq,
-            "bible_quote_verified": bool(bq) and any(bq in q or q in bq for q in all_quotes),
+            "bible_quote_verified": bool(bq) and any(quote_in(q, bq) or quote_in(bq, q) for q in all_quotes),
             "conflict_quote": cq,
-            "conflict_verified": bool(cq) and cq in chapter["text"],
+            "conflict_verified": bool(cq) and quote_in(chapter["text"], cq),
             "explanation": f.get("explanation", ""),
             "suggestion": f.get("suggestion", ""),
             "status": "open",
