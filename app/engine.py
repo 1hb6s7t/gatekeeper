@@ -272,6 +272,53 @@ CHECK_PROMPT = """下面是一部小说的设定库（由前 {n} 章抽取，每
 
 
 # ---------------------------------------------------------------- bible ops
+CHANGE_RE = re.compile(r"由\s*(.{1,30}?)\s*变为\s*(.{1,30}?)(?=[，。；！？,.!?]|$)")
+CHAPTER_NO_RE = re.compile(r"第\s*(\d+|[零〇一二三四五六七八九十百两]+)\s*[章回节]")
+
+
+def _chinese_number(value: str) -> int | None:
+    if value.isdigit():
+        return int(value)
+    digits = {"零": 0, "〇": 0, "一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
+    if value in digits:
+        return digits[value]
+    total = 0
+    section = 0
+    number = 0
+    for char in value:
+        if char in digits:
+            number = digits[char]
+        elif char == "十":
+            section += (number or 1) * 10
+            number = 0
+        elif char == "百":
+            section += (number or 1) * 100
+            number = 0
+        else:
+            return None
+    result = total + section + number
+    return result or None
+
+
+def chapter_number(value: str, default: int = 1) -> int:
+    match = CHAPTER_NO_RE.search(value or "")
+    if not match:
+        return default
+    return _chinese_number(match.group(1)) or default
+
+
+def _change_marker(fact: str) -> dict[str, str] | None:
+    match = CHANGE_RE.search(fact)
+    if not match:
+        return None
+    strip_chars = " \t，。；！？,.!?、"
+    before = match.group(1).strip(strip_chars)
+    after = match.group(2).strip(strip_chars)
+    if not before or not after:
+        return None
+    return {"from": before, "to": after}
+
+
 def compact_bible(bible: list[dict], with_quotes: bool = True) -> str:
     if not bible:
         return "（空）"
@@ -284,9 +331,16 @@ def compact_bible(bible: list[dict], with_quotes: bool = True) -> str:
     return "\n".join(lines)
 
 
-def merge_entries(bible: list[dict], new_entries: list[dict], chapter_title: str, chapter_text: str) -> int:
+def merge_entries(
+    bible: list[dict],
+    new_entries: list[dict],
+    chapter_title: str,
+    chapter_text: str,
+    chapter_no: int | None = None,
+) -> int:
     """Merge extracted entries into bible in place. Returns number of facts added."""
     added = 0
+    current_chapter_no = chapter_no or chapter_number(chapter_title, 1)
     by_key = {(e["type"], e["name"]): e for e in bible}
     for ne in new_entries:
         t = ne.get("type")
@@ -304,12 +358,19 @@ def merge_entries(bible: list[dict], new_entries: list[dict], chapter_title: str
             if not fact or fact in existing:
                 continue
             quote = (f.get("quote") or "").strip()
-            entry["facts"].append({
+            fact_record = {
                 "id": uuid.uuid4().hex[:8],
                 "fact": fact,
                 "quote": quote,
                 "quote_verified": bool(quote) and quote in chapter_text,
                 "chapter": chapter_title,
+                "chapter_no": chapter_number(fact, current_chapter_no),
+            }
+            change = _change_marker(fact)
+            if change:
+                fact_record["change"] = change
+            entry["facts"].append({
+                **fact_record,
             })
             existing.add(fact)
             added += 1
@@ -356,7 +417,7 @@ def match_rule(finding: dict, rules: list[dict]) -> str | None:
 def extract_chapter(bible: list[dict], n: int, chapter: dict, *, allow_cache: bool = True) -> dict:
     prompt = EXTRACT_PROMPT.format(n=n, title=chapter["title"], bible=compact_bible(bible, with_quotes=False), text=chapter["text"])
     data, source = _parse_model_json("extract", prompt, SYSTEM, allow_cache=allow_cache)
-    added = merge_entries(bible, data.get("entries", []), chapter["title"], chapter["text"])
+    added = merge_entries(bible, data.get("entries", []), chapter["title"], chapter["text"], chapter_no=n)
     return {"added": added, "source": source}
 
 

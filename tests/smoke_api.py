@@ -58,6 +58,11 @@ def main() -> None:
 
         assert len(project["bible"]) == 15
         assert sum(len(entry["facts"]) for entry in project["bible"]) == 60
+        assert sum(
+            bool(f.get("change"))
+            for entry in project["bible"]
+            for f in entry["facts"]
+        ) >= 2
 
         checked = assert_ok(
             client.post(
