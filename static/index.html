@@ -83,7 +83,7 @@ mark.hl{background:var(--mark);color:inherit}
 <main>
 <!-- LEFT: manuscript & chapters -->
 <section>
-  <div class="sec-h"><h2>稿件</h2><span class="cnt" id="chapCount"></span><span class="spacer"></span><button class="sm" id="btnSample">载入示例</button></div>
+  <div class="sec-h"><h2>稿件</h2><span class="cnt" id="chapCount"></span><span class="spacer"></span><button class="sm" id="btnExport" disabled>导出 .md</button><button class="sm" id="btnSample">载入示例</button></div>
   <div class="body" id="left">
     <div id="newProj">
       <input type="text" id="title" placeholder="作品名" style="width:100%;margin-bottom:8px">
@@ -97,12 +97,13 @@ mark.hl{background:var(--mark);color:inherit}
 
 <!-- MIDDLE: bible / new chapter -->
 <section>
-  <div class="tabs"><button class="on" data-tab="bible">设定库</button><button data-tab="newch">新章节</button><button data-tab="reader">原文</button></div>
+  <div class="tabs"><button class="on" data-tab="bible">设定库</button><button data-tab="timeline">时间线</button><button data-tab="newch">新章节</button><button data-tab="reader">原文</button></div>
   <div class="body" id="mid">
     <div id="tab-bible">
       <div class="toolbar"><button class="primary" id="btnExtractAll">建立设定库</button><label><input type="checkbox" id="useCache" checked> 允许使用缓存结果</label><span class="cnt" id="bibleCount"></span></div>
       <div id="bible"><div class="empty">切分章节后，点「建立设定库」逐章抽取角色、地点、物品、时间线。每条事实附来源章节与原文引用。</div></div>
     </div>
+    <div id="tab-timeline" hidden><div id="timeline"><div class="empty">建立设定库后，这里会按章节显示事件与状态变更。</div></div></div>
     <div id="tab-newch" hidden>
       <input type="text" id="newTitle" placeholder="新章节标题" style="width:100%;margin-bottom:8px">
       <textarea id="newText" rows="22" placeholder="粘贴刚写完的新章节"></textarea>
@@ -123,10 +124,10 @@ mark.hl{background:var(--mark);color:inherit}
 
 <script>
 const $=s=>document.querySelector(s);
-const state={project:null,check:null,sample:null,tab:'bible'};
+const state={project:null,check:null,sample:null,tab:'bible',timing:{},extracting:false,checking:false,stop:false};
 const TYPE={character:'角色',location:'地点',item:'物品',timeline:'时间线',fact:'事实',time:'时间'};
 const SEV={high:'高',medium:'中',low:'低'};
-const SRC={anthropic:'Anthropic API',"claude-cli":'claude -p',cache:'缓存'};
+const SRC={openai:'OpenAI 兼容 API',anthropic:'Anthropic API',"claude-cli":'claude -p',cache:'缓存'};
 
 async function api(path,opt={}){const r=await fetch('/api'+path,{headers:{'content-type':'application/json'},...opt});if(!r.ok){let m=r.statusText;try{m=(await r.json()).detail||m}catch{}throw new Error(m)}return r.json()}
 function status(id,msg,err=false,busy=false){const el=$(id);el.className='status'+(err?' err':'');el.innerHTML=(busy?'<span class="busy"></span>':'')+msg}
@@ -134,21 +135,21 @@ function esc(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>'
 
 // ------------ tabs
 document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
-function showTab(t){state.tab=t;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));['bible','newch','reader'].forEach(x=>$('#tab-'+x).hidden=x!==t)}
+function showTab(t){state.tab=t;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));['bible','timeline','newch','reader'].forEach(x=>$('#tab-'+x).hidden=x!==t)}
 
 // ------------ meta & sample
 api('/meta').then(m=>{$('#meta').textContent=`provider ${m.provider} · model ${m.model}`}).catch(()=>{});
-$('#btnSample').onclick=async()=>{state.sample=await api('/sample');$('#title').value=state.sample.title;$('#manuscript').value=state.sample.manuscript;$('#newTitle').value=state.sample.new_chapter_title;$('#newText').value=state.sample.new_chapter;status('#leftStatus','示例已载入：5 章 + 预埋 10 处矛盾的第六章。抽取与检查结果有缓存，无 API 也能跑通。');$('#btnEval').hidden=false};
+$('#btnSample').onclick=async()=>{state.sample=await api('/sample');state.timing={};state.check=null;$('#title').value=state.sample.title;$('#manuscript').value=state.sample.manuscript;$('#newTitle').value=state.sample.new_chapter_title;$('#newText').value=state.sample.new_chapter;status('#leftStatus','示例已载入：5 章 + 预埋 10 处矛盾的第六章。抽取与检查结果有缓存，无 API 也能跑通。');$('#btnEval').hidden=false};
 
 // ------------ project
-$('#btnCreate').onclick=async()=>{try{status('#leftStatus','切分中…',false,true);state.project=await api('/projects',{method:'POST',body:JSON.stringify({title:$('#title').value||'未命名作品',text:$('#manuscript').value})});renderProject();status('#leftStatus',`已切分 ${state.project.chapters.length} 章`)}catch(e){status('#leftStatus',e.message,true)}};
+$('#btnCreate').onclick=async()=>{try{status('#leftStatus','切分中…',false,true);state.project=await api('/projects',{method:'POST',body:JSON.stringify({title:$('#title').value||'未命名作品',text:$('#manuscript').value})});state.timing={};state.check=null;renderProject();const warnings=state.project.warnings||[];status('#leftStatus',`已切分 ${state.project.chapters.length} 章${warnings.length?' · '+warnings.join('；'):''}`,false)}catch(e){status('#leftStatus',e.message,true)}};
 
-function renderProject(){const p=state.project;$('#newProj').hidden=true;$('#chapters').hidden=false;$('#chapCount').textContent=`${p.title} · ${p.chapters.length} 章`;
-$('#chapters').innerHTML=p.chapters.map((c,i)=>`<div class="chap"><span class="t">${esc(c.title)}</span><span class="n">${c.text.length} 字</span>${c.extracted?'<span class="pill good">已抽取</span>':`<button class="sm" data-i="${i}">抽取</button>`}</div>`).join('');
-$('#chapters').querySelectorAll('button').forEach(b=>b.onclick=()=>extractOne(+b.dataset.i));renderBible()}
+function renderProject(){const p=state.project;$('#newProj').hidden=true;$('#chapters').hidden=false;$('#btnExport').disabled=false;$('#chapCount').textContent=`${p.title} · ${p.chapters.length} 章`;
+$('#chapters').innerHTML=p.chapters.map((c,i)=>{const t=state.timing[i];const timing=t?` · ${t.seconds}s · ${SRC[t.source]||t.source}`:'';return `<div class="chap"><span class="t">${esc(c.title)}</span><span class="n">${c.text.length} 字${esc(timing)}</span>${c.extracted?'<span class="pill good">已抽取</span>':`<button class="sm" data-i="${i}">抽取</button>`}</div>`}).join('');
+$('#chapters').querySelectorAll('button').forEach(b=>b.onclick=()=>extractOne(+b.dataset.i));renderBible();renderTimeline()}
 
-async function extractOne(i){const p=state.project,c=p.chapters[i];try{status('#midStatus',`抽取 ${c.title}…`,false,true);const r=await api(`/projects/${p.id}/extract`,{method:'POST',body:JSON.stringify({chapter_index:i,use_cache:$('#useCache').checked})});state.project=r.project;renderProject();status('#midStatus',`${c.title}：+${r.added} 条事实 · 来源 ${SRC[r.source]||r.source}`);return true}catch(e){status('#midStatus',e.message,true);return false}}
-$('#btnExtractAll').onclick=async()=>{if(!state.project){status('#midStatus','先切分章节',true);return}for(let i=0;i<state.project.chapters.length;i++){if(state.project.chapters[i].extracted)continue;if(!await extractOne(i))return}status('#midStatus','设定库已建立。切到「新章节」检查。')};
+async function extractOne(i,fromBatch=false){if(state.extracting&&!fromBatch)return false;const p=state.project,c=p.chapters[i],started=Date.now();const timer=setInterval(()=>status('#midStatus',`抽取 ${c.title} · 已用 ${Math.round((Date.now()-started)/1000)}s`,false,true),1000);try{status('#midStatus',`抽取 ${c.title} · 已用 0s`,false,true);const r=await api(`/projects/${p.id}/extract`,{method:'POST',body:JSON.stringify({chapter_index:i,use_cache:$('#useCache').checked})});state.project=r.project;state.timing[i]={seconds:Math.round((Date.now()-started)/1000),source:r.source};renderProject();status('#midStatus',`${c.title}：+${r.added} 条事实 · ${state.timing[i].seconds}s · 来源 ${SRC[r.source]||r.source}`);return true}catch(e){status('#midStatus',e.message,true);return false}finally{clearInterval(timer)}}
+$('#btnExtractAll').onclick=async()=>{if(!state.project){status('#midStatus','先切分章节',true);return}if(state.extracting){state.stop=true;status('#midStatus','正在停止；当前章节完成后会停在下一章之前。',false,true);return}state.extracting=true;state.stop=false;$('#btnExtractAll').textContent='停止';try{for(let i=0;i<state.project.chapters.length;i++){if(state.stop)break;if(state.project.chapters[i].extracted)continue;if(!await extractOne(i,true))return}if(state.stop){const done=state.project.chapters.filter(c=>c.extracted).length;status('#midStatus',`已停止，已抽取 ${done} 章，可再点继续。`)}else{status('#midStatus','设定库已建立。切到「新章节」检查。')}}finally{state.extracting=false;state.stop=false;$('#btnExtractAll').textContent='建立设定库'}};
 
 function renderBible(){const p=state.project;const facts=p.bible.reduce((n,e)=>n+e.facts.length,0);$('#bibleCount').textContent=p.bible.length?`${p.bible.length} 个实体 · ${facts} 条事实`:'';
 if(!p.bible.length){$('#bible').innerHTML='<div class="empty">点「建立设定库」开始抽取。</div>';return}
@@ -163,8 +164,10 @@ const i=quote?src.indexOf(quote):-1;let html=esc(src);if(i>=0)html=esc(src.slice
 $('#reader').className='';$('#reader').innerHTML=`<div class="hint" style="margin-bottom:8px">${esc(chapterTitle)}${i<0?' · <span class="pill warn">未找到逐字引用</span>':''}</div>`+html;showTab('reader');const m=$('#hl');if(m)m.scrollIntoView({block:'center'})}
 
 // ------------ check
-$('#btnCheck').onclick=async()=>{const p=state.project;if(!p){status('#rightStatus','先切分章节并建立设定库',true);return}try{status('#rightStatus','对照设定库检查中…',false,true);const r=await api(`/projects/${p.id}/check`,{method:'POST',body:JSON.stringify({title:$('#newTitle').value||'新章节',text:$('#newText').value,use_cache:$('#useCache').checked})});state.project=r.project;state.check=r.check;renderFindings();$('#btnCommit').disabled=false;status('#rightStatus',`${r.check.findings.length} 条 · 来源 ${SRC[r.check.source]||r.check.source}`)}catch(e){status('#rightStatus',e.message,true)}};
+async function runCheck(){const p=state.project;if(!p){status('#rightStatus','先切分章节并建立设定库',true);return}if(state.checking)return;state.checking=true;const started=Date.now();const timer=setInterval(()=>status('#rightStatus',`对照设定库检查中 · 已用 ${Math.round((Date.now()-started)/1000)}s`,false,true),1000);$('#btnCheck').disabled=true;try{status('#rightStatus','对照设定库检查中 · 已用 0s',false,true);const r=await api(`/projects/${p.id}/check`,{method:'POST',body:JSON.stringify({title:$('#newTitle').value||'新章节',text:$('#newText').value,use_cache:$('#useCache').checked})});state.project=r.project;state.check=r.check;renderFindings();$('#btnCommit').disabled=false;status('#rightStatus',`${r.check.findings.length} 条 · ${Math.round((Date.now()-started)/1000)}s · 来源 ${SRC[r.check.source]||r.check.source}`)}catch(e){status('#rightStatus',`${esc(e.message)} <button class="sm" id="btnRetryCheck">重试</button>`,true);const retry=$('#btnRetryCheck');if(retry)retry.onclick=runCheck}finally{clearInterval(timer);state.checking=false;$('#btnCheck').disabled=false}}
+$('#btnCheck').onclick=runCheck;
 $('#btnCommit').onclick=async()=>{const p=state.project;state.project=await api(`/projects/${p.id}/checks/${state.check.id}/commit`,{method:'POST'});renderProject();$('#btnCommit').disabled=true;status('#midStatus','已并入稿件，可在左侧对新章节抽取，更新设定库。')};
+$('#btnExport').onclick=()=>{if(state.project)window.open(`/api/projects/${state.project.id}/export.md`,'_blank')};
 
 function renderFindings(){const c=state.check;if(!c){return}const fs=c.findings;const open=fs.filter(f=>f.status==='open').length;$('#findCount').textContent=`${fs.length} 条 · ${open} 待处理`;
 if(!fs.length){$('#findings').innerHTML='<div class="empty">没有发现与设定库矛盾的地方。</div>';return}
