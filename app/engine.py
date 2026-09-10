@@ -36,11 +36,20 @@ FINDING_TYPES = ["fact", "time", "character", "location", "item"]
 
 
 # ---------------------------------------------------------------- chapters
-CHAPTER_RE = re.compile(r"^\s*(第\s*[0-9一二三四五六七八九十百零两]+\s*[章回节]|Chapter\s+\d+)[^\n]*$", re.M)
+CHAPTER_RE = re.compile(
+    r"^[ \t]*(?:"
+    r"第[ \t]*(?:\d+|[零〇一二三四五六七八九十百两]+)[ \t]*[章回节][^\r\n]*"
+    r"|Chapter[ \t]+\d+[^\r\n]*"
+    r"|卷[ \t]*(?:\d+|[零〇一二三四五六七八九十百两]+)[^\r\n]*"
+    r"|\d+[.、][^\r\n]{0,28}"
+    r"|={3,}"
+    r")[ \t]*$",
+    re.M | re.IGNORECASE,
+)
 
 
 def split_chapters(text: str) -> list[dict[str, str]]:
-    """Split pasted manuscript into chapters by '第N章' headings. Falls back to one chapter."""
+    """Split pasted manuscript by common Chinese/English headings or separators."""
     text = text.replace("\r\n", "\n").strip()
     heads = list(CHAPTER_RE.finditer(text))
     if not heads:

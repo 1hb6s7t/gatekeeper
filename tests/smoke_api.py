@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from fastapi.testclient import TestClient
 
+from app import engine
 from app.server import DATA, app
 
 
@@ -42,6 +43,9 @@ def main() -> None:
     project_path = DATA / f"{pid}.json"
 
     try:
+        assert len(engine.split_chapters("Chapter 1 Opening\nalpha\nChapter 2 Return\nbeta")) == 2
+        assert len(engine.split_chapters("1. First\nalpha\n2、Second\nbeta")) == 2
+        assert len(engine.split_chapters("卷一\nalpha\n===\nbeta")) == 2
         assert len(project["chapters"]) == 5
         assert not project.get("warnings")
 
@@ -106,6 +110,35 @@ def main() -> None:
         repeated_findings = repeated["check"]["findings"]
         assert sum(f["status"] == "intentional" and bool(f.get("rule_id")) for f in repeated_findings) == 1
         assert sum(f["status"] == "open" for f in repeated_findings) == 8
+
+        manual = assert_ok(
+            client.post(
+                f"/api/projects/{pid}/bible/facts",
+                json={
+                    "type": "item",
+                    "name": "手工事实测试",
+                    "fact": "手工事实初稿",
+                    "chapter": project["chapters"][0]["title"],
+                    "quote": "青玉佩贴着皮肉，温的",
+                },
+            ),
+            "add manual fact",
+        )
+        manual_entry = next(e for e in manual["bible"] if e["name"] == "手工事实测试")
+        manual_fact = manual_entry["facts"][0]
+        assert manual_fact["quote_verified"] is True
+        edited = assert_ok(
+            client.patch(
+                f"/api/projects/{pid}/bible/{manual_entry['id']}/facts/{manual_fact['id']}",
+                json={"fact": "手工事实修订"},
+            ),
+            "edit manual fact",
+        )
+        edited_fact = next(
+            f for e in edited["bible"] if e["id"] == manual_entry["id"] for f in e["facts"] if f["id"] == manual_fact["id"]
+        )
+        assert edited_fact["fact"] == "手工事实修订"
+        assert edited_fact["quote_verified"] is True
 
         committed = assert_ok(
             client.post(

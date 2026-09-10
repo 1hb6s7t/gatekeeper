@@ -67,6 +67,19 @@ class ResolveReq(BaseModel):
     note: str = ""
 
 
+class BibleFactReq(BaseModel):
+    type: str
+    name: str
+    fact: str
+    chapter: str
+    quote: str = ""
+
+
+class BibleFactPatch(BaseModel):
+    fact: str | None = None
+    quote: str | None = None
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -301,6 +314,66 @@ def commit(pid: str, cid: str):
             save(project)
             return project
     raise HTTPException(404, "check not found")
+
+
+@app.post("/api/projects/{pid}/bible/facts")
+def add_fact(pid: str, req: BibleFactReq):
+    if req.type not in engine.ENTRY_TYPES:
+        raise HTTPException(400, "bad bible entry type")
+    name = req.name.strip()
+    fact = req.fact.strip()
+    if not name or not fact:
+        raise HTTPException(400, "实体名和事实不能为空")
+    project = load(pid)
+    chapter = next((c for c in project["chapters"] if c["title"] == req.chapter), None)
+    if chapter is None:
+        raise HTTPException(400, "来源章节不存在")
+    engine.merge_entries(
+        project["bible"],
+        [{"type": req.type, "name": name, "facts": [{"fact": fact, "quote": req.quote.strip()}]}],
+        chapter["title"],
+        chapter["text"],
+        chapter_no=engine.chapter_number(chapter["title"]),
+    )
+    return save(project)
+
+
+@app.patch("/api/projects/{pid}/bible/{eid}/facts/{fid}")
+def update_fact(pid: str, eid: str, fid: str, req: BibleFactPatch):
+    if req.fact is None and req.quote is None:
+        raise HTTPException(400, "没有要修改的字段")
+    project = load(pid)
+    for entry in project["bible"]:
+        if entry.get("id") != eid:
+            continue
+        for fact_record in entry.get("facts", []):
+            if fact_record.get("id") != fid:
+                continue
+            if req.fact is not None:
+                fact = req.fact.strip()
+                if not fact:
+                    raise HTTPException(400, "事实不能为空")
+                fact_record["fact"] = fact
+                change = engine._change_marker(fact)
+                if change:
+                    fact_record["change"] = change
+                else:
+                    fact_record.pop("change", None)
+                fact_record["chapter_no"] = engine.chapter_number(
+                    fact,
+                    engine.chapter_number(fact_record.get("chapter", "")),
+                )
+            if req.quote is not None:
+                fact_record["quote"] = req.quote.strip()
+            source = next(
+                (c for c in project["chapters"] if c["title"] == fact_record.get("chapter")),
+                None,
+            )
+            fact_record["quote_verified"] = bool(fact_record.get("quote")) and bool(
+                source and fact_record["quote"] in source.get("text", "")
+            )
+            return save(project)
+    raise HTTPException(404, "fact not found")
 
 
 @app.delete("/api/projects/{pid}/bible/{eid}/facts/{fid}")
