@@ -65,6 +65,7 @@ python eval.py --no-cache
 - 引用校验是程序做的，不是模型说的：抽取的 quote 必须逐字出现在该章原文，检查的 conflict_quote 必须逐字出现在新章原文，否则界面标黄
 - 「有意为之」的规则过滤是服务端程序做的，依据实体名、事实文本和引用的可解释文本匹配，不依赖模型自觉
 - `python tests/smoke_api.py` 会在 `GATEKEEPER_PROVIDER=cache` 下覆盖载入示例、5 章抽取、检查、规则、变更识别、手工事实编辑、并入稿件和导出
+- `python scripts/ui_smoke.py` 用 Playwright 在真实浏览器里点完整路径：停止/继续抽取、检查、答案卡面板、规则创建→重检跳过→删除、手工添加与行内编辑、导出下载头；跑在缓存模式，秒级，需要本地服务在 :8765
 
 **缓存**
 - `data/cache/` 里存有内置示例 5 章抽取 + 第六章检查的模型原始输出，按 prompt 哈希命中。界面「来源」会显示「缓存」。取消勾选「允许使用缓存结果」即可强制重新调用
@@ -90,6 +91,7 @@ python eval.py --no-cache
 |---|---|
 | 离线缓存回归（2026-09-10） | 15 个实体 / 60 条事实；引用 60/60；第六章 9 条发现；召回 9/10；误报 1；陷阱 0/2；冲突引用 9/9；秒级 |
 | 全路径 API 冒烟（2026-09-10） | `tests/smoke_api.py`：PASS；覆盖规则、规则重检、变更识别、手工添加/编辑、并入稿件、导出 |
+| 浏览器级 UI 冒烟（2026-09-10） | `scripts/ui_smoke.py`：PASS；真实点击停止/继续抽取（停在第 1 章、续跑到 5 章）、检查、答案卡面板、规则创建→重检跳过→删除、手工添加与行内编辑、导出下载头；无 console 错误 |
 | 真实 Claude CLI（2026-09-09） | `claude -p`、`--effort medium`、模型 `claude-opus-5`：15/60，召回 9/10，误报 1，陷阱 0，冲突引用 9/9，检查 86 秒 |
 | 真实 OpenAI 兼容 API（2026-09-10） | `mimo-v2.5-pro`：15 实体 / 52 事实，抽取引用 49/52，检查引用 8/9（剥引号后）；召回 9/10，误报 0，陷阱 0；每章抽取 78–306 秒，检查 90 秒；第一章输出截断一次，`max_tokens` 提到 16000 重试成功。完整日志 `data/eval_openai.log`，原始输出在 `data/cache_openai/`（git 忽略） |
 
@@ -116,6 +118,7 @@ samples/        示例稿件、第六章、答案卡
 eval.py         评估脚本
 tests/smoke_api.py  缓存模式全路径 API 冒烟
 scripts/shot_timeline_rules.py   Playwright 截时间线/规则两张界面图
+scripts/ui_smoke.py    Playwright 浏览器级全路径冒烟
 .env.example    OpenAI 兼容通道配置占位
 docs/PRD.md     一页 PRD；IMPLEMENTATION_PLAN_4H.md 为本次实施方案
 ```
