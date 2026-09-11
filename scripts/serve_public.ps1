@@ -1,6 +1,11 @@
 <#
 Start the public demo: real model channel, key read from the environment only.
 
+ASCII-only on purpose: Windows PowerShell 5.1 reads a .ps1 as ANSI unless it
+carries a UTF-8 BOM, so non-ASCII text in this file breaks the parser on a
+machine whose codepage is not UTF-8.  Chinese output belongs in the Python
+services, which decode UTF-8 regardless of platform.
+
 The key is never accepted as an argument, never printed and never written to
 disk.  Put it in this shell first (piping from a file keeps it out of your shell
 history, which a literal assignment would not):
@@ -20,7 +25,7 @@ $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
 if (-not $env:GATEKEEPER_OPENAI_API_KEY) {
-  Write-Error 'GATEKEEPER_OPENAI_API_KEY 未设置。请先在当前 shell 里设置它，再运行本脚本；不要把密钥写进本文件或任何仓库内的文件。'
+  Write-Error 'GATEKEEPER_OPENAI_API_KEY is not set. Set it in this shell first; do not put the key in this file or anywhere inside the repository.'
   exit 1
 }
 
@@ -39,20 +44,22 @@ $env:GATEKEEPER_CACHE_FALLBACK_DIR = 'data/cache'
 
 # Budget brakes (app/guard.py).  Everything a visitor's own manuscript costs is
 # metered; the bundled sample never reaches the model at all.
-if (-not $env:GATEKEEPER_IP_LIMIT)           { $env:GATEKEEPER_IP_LIMIT           = '20' }
-if (-not $env:GATEKEEPER_IP_WINDOW_SECONDS)  { $env:GATEKEEPER_IP_WINDOW_SECONDS  = '3600' }
-if (-not $env:GATEKEEPER_DAILY_LIMIT)        { $env:GATEKEEPER_DAILY_LIMIT        = '150' }
-if (-not $env:GATEKEEPER_MAX_CONCURRENCY)    { $env:GATEKEEPER_MAX_CONCURRENCY    = '1' }
+if (-not $env:GATEKEEPER_IP_LIMIT)          { $env:GATEKEEPER_IP_LIMIT          = '20' }
+if (-not $env:GATEKEEPER_IP_WINDOW_SECONDS) { $env:GATEKEEPER_IP_WINDOW_SECONDS = '3600' }
+if (-not $env:GATEKEEPER_DAILY_LIMIT)       { $env:GATEKEEPER_DAILY_LIMIT       = '150' }
+if (-not $env:GATEKEEPER_MAX_CONCURRENCY)   { $env:GATEKEEPER_MAX_CONCURRENCY   = '1' }
 
-# The console is the server log.  To keep a copy, run the script with the
-# redirection outside it:  ... -File scripts/serve_public.ps1 *> data/server_demo.log
+# The console is the server log.  To keep a copy, redirect outside the script:
+#   powershell -File scripts/serve_public.ps1 *> data/server_demo.log
 Write-Host "provider   $env:GATEKEEPER_PROVIDER"
 Write-Host "model      $env:GATEKEEPER_OPENAI_MODEL"
-Write-Host "key        已从环境变量读取（不回显、不落盘）"
-Write-Host "cache      $env:GATEKEEPER_CACHE_DIR（只读回退 $env:GATEKEEPER_CACHE_FALLBACK_DIR）"
-Write-Host "budget     每访客 $env:GATEKEEPER_IP_LIMIT 次/$([int]$env:GATEKEEPER_IP_WINDOW_SECONDS / 60) 分钟 · 全站每天 $env:GATEKEEPER_DAILY_LIMIT 次 · 并发 $env:GATEKEEPER_MAX_CONCURRENCY"
+Write-Host "key        read from the environment (never echoed, never stored)"
+Write-Host "cache      $env:GATEKEEPER_CACHE_DIR (read-only fallback $env:GATEKEEPER_CACHE_FALLBACK_DIR)"
+$minutes = [int]$env:GATEKEEPER_IP_WINDOW_SECONDS / 60
+Write-Host "budget     $env:GATEKEEPER_IP_LIMIT calls per visitor per $minutes min, $env:GATEKEEPER_DAILY_LIMIT per day, concurrency $env:GATEKEEPER_MAX_CONCURRENCY"
 Write-Host ''
-Write-Host '绑定 127.0.0.1:8766（只经隧道对外）。用 cloudflared tunnel --url http://127.0.0.1:8766 暴露。'
+Write-Host 'Binding 127.0.0.1:8766 (reachable only through the tunnel).'
+Write-Host 'Expose with: cloudflared tunnel --url http://127.0.0.1:8766'
 Write-Host ''
 
 python -m uvicorn app.server:app --host 127.0.0.1 --port 8766

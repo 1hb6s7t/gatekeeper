@@ -8,11 +8,11 @@
 
 | 交付物 | 地址 |
 |---|---|
-| 线上演示（离线缓存模式） | https://inner-homework-naturally-policies.trycloudflare.com |
+| 线上演示（真实模型通道 + 示例缓存） | https://inner-homework-naturally-policies.trycloudflare.com |
 | 汇报录屏（4 分 18 秒） | https://inner-homework-naturally-policies.trycloudflare.com/report.mp4 ／ [Release 附件](https://github.com/1hb6s7t/gatekeeper/releases/download/v1-report/report.mp4) ／ 仓库内 `docs/report.mp4` |
 | 仓库 | https://github.com/1hb6s7t/gatekeeper |
 
-演示实例跑在 `GATEKEEPER_PROVIDER=cache`，**不接任何模型、不需要密钥、也不会消耗额度**。评审按下面的顺序点，几秒内就能走完整条路径：
+演示实例跑在真实模型通道（`GATEKEEPER_PROVIDER=openai`，模型 `mimo-v2.5-pro`），密钥只存在于那台机器的环境变量里。**内置示例这条路径由随仓库分发的缓存直接回放，秒级返回、零额度消耗**，所以评审走下面这五步不需要等模型，作者也不为此付费：
 
 1. 「载入示例」→「切分章节」（内置《青崖夜行》5 章）
 2. 「建立设定库」——逐章抽取，15 个实体 / 60 条事实，来源一栏显示「缓存」
@@ -20,7 +20,7 @@
 4. 「新章节」页粘贴第六章（点「载入示例新章」自动填入）→「检查矛盾」→ 9 条发现，每条带设定侧引用、新章侧引用和修改建议
 5. 「对照答案卡」——召回 9/10、误报 1、陷阱 0/2、冲突引用逐字命中 9/9
 
-缓存只覆盖内置示例这条路径。**要处理自己的稿件，请按下面「运行」在本地启动并配置模型通道**；在演示站上点缓存未覆盖的步骤会明确提示这是离线演示模式。
+**换自己的稿件**同样能走完整条路径，这时才会真的调用模型：单章抽取 74–80 秒、检查 18–90 秒（实测，取决于章节长度），返回的每条结论照样带逐字引用。额度由 `app/guard.py` 兜底：每访客每小时 20 次、全站每天 150 次、并发 1，超了返回 429 并说明原因；稿件过长返回 413。原稿不需要密钥的离线模式仍然可用，`GATEKEEPER_PROVIDER=cache` 一行即可切回。
 
 汇报录屏 4 分 18 秒，内容是：定位（第 1 节）→ 问题（第 2 节）→ 为什么选这个方向（第 3 节）→ 关键取舍（第 4 节）→ 实机走一遍完整路径（第 5 节，缓存模式实录）→ 三条通道的评测硬数字（第 6 节）→ AI 在研发中如何参与、以及它暴露出的两个自身问题（第 7 节）→ 完成边界与实际投入（第 8 节）。录制用的幻灯片、旁白文本和脚本都在 `docs/report_deck.html`、`docs/narration.json`、`scripts/record_report.py`，可复现。
 

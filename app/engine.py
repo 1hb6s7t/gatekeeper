@@ -224,18 +224,24 @@ def call_model(
     if not order or any(p not in dispatch for p in order):
         raise RuntimeError(f"未知模型通道：{provider}")
 
-    def _call(provider_name: str, **kwargs) -> str:
-        """Every provider request goes through here, so every one is charged."""
+    def _charge() -> None:
+        """Ask the budget callback for permission before spending anything.
+
+        Called outside the try blocks below on purpose.  A refusal is not a
+        provider failure: treating it as one would hide it inside the fallback
+        chain, relabel it as an upstream error, and answer the next provider
+        with another request - spending more, not less.
+        """
         if _before_model_call is not None:
             _before_model_call()
-        return dispatch[provider_name](prompt, system, **kwargs)
 
     last_errors: list[str] = []
     for _attempt in range(max(0, retries) + 1):
         errors = []
         for p in order:
+            _charge()
             try:
-                out = _call(p)
+                out = dispatch[p](prompt, system)
                 if not isinstance(out, str) or not out.strip():
                     raise RuntimeError("模型返回空文本")
                 key.write_text(out, encoding="utf-8")
@@ -243,8 +249,9 @@ def call_model(
             except Exception as e:  # noqa: BLE001 - fall through to next provider
                 if p == "openai" and isinstance(e, RuntimeError) and "输出被截断" in str(e):
                     log_stderr("OpenAI 兼容 API 输出被截断（finish_reason=length），增大 max_tokens 重试一次")
+                    _charge()
                     try:
-                        out = _call("openai", max_tokens=16000)
+                        out = dispatch["openai"](prompt, system, max_tokens=16000)
                         if not isinstance(out, str) or not out.strip():
                             raise RuntimeError("模型返回空文本")
                         key.write_text(out, encoding="utf-8")

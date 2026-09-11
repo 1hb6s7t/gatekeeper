@@ -44,19 +44,31 @@ def main() -> int:
             all_verified = all(f["conflict_verified"] for f in check["findings"])
             print(f"检查：{len(check['findings'])} 条发现，source={check['source']}，冲突引用全部核验={all_verified}")
 
-            # A reviewer editing the new chapter hits a cache miss: they must get the
-            # plain-Chinese offline-demo explanation, not a raw provider error.
+            # A reviewer editing the new chapter either hits a cache miss (offline
+            # demo) or a real model call (a keyed instance): they must get a
+            # readable answer with the right status, never a raw provider error
+            # and never a Cloudflare error page.
             miss = c.post(
                 f"/api/projects/{pid}/check",
                 json={"title": sample["new_chapter_title"], "text": sample["new_chapter"] + "\n\n（作者临时加的一段话。）", "use_cache": True},
+                timeout=600.0,
             )
             try:
                 detail = miss.json().get("detail", "")
             except ValueError:
                 detail = miss.text
             print(f"缓存未命中：HTTP {miss.status_code} via {miss.headers.get('server')} type={miss.headers.get('content-type')}")
-            print(f"  中文提示={'离线演示模式' in detail}")
-            print(f"  -> {detail[:160]}")
+            if meta.get("provider") == "cache":
+                print(f"  中文提示={'离线演示模式' in detail}")
+                print(f"  -> {detail[:160]}")
+            else:
+                # Real channel: the same request is a genuine model call, so the
+                # interesting assertions are that it answered and that the answer
+                # carries verbatim evidence rather than the cache explanation.
+                findings = (miss.json().get("check") or {}).get("findings", []) if miss.status_code == 200 else []
+                verified = sum(1 for f in findings if f.get("conflict_verified"))
+                print(f"  真实通道作答：{len(findings)} 条发现，引用逐字命中 {verified}/{len(findings)}")
+                print(f"  未泄漏上游错误={'模型调用失败' not in detail}")
 
             md = c.get(f"/api/projects/{pid}/export.md")
             print(f"导出：HTTP {md.status_code}，{len(md.text)} 字符，含「林砚」={'林砚' in md.text}")

@@ -128,6 +128,9 @@ def local_run() -> None:
         "GATEKEEPER_CACHE_DIR": str(scratch / "cache"),
         "GATEKEEPER_LIMIT_STATE": str(scratch / "limits.json"),
         "GATEKEEPER_DISABLE_LIMITS": "",   # the real brakes are part of the surface
+        # One unit per visitor, so the second charged call below must be refused.
+        "GATEKEEPER_IP_LIMIT": "1",
+        "GATEKEEPER_IP_WINDOW_SECONDS": "3600",
     })
     os.environ.pop("GATEKEEPER_CACHE_FALLBACK_DIR", None)  # force real provider calls
 
@@ -190,6 +193,16 @@ def local_run() -> None:
             check(CANARY not in captured.getvalue(), "服务端日志同样不含密钥")
             check("provider call failed" in captured.getvalue(), "服务端日志保留了诊断信息")
 
+        # The refusal has to arrive as a budget answer, not as a relabelled
+        # provider failure: the call above already spent this visitor's single
+        # unit, and the engine's provider fallback chain must let the refusal
+        # through instead of swallowing it as one more upstream error.
+        resp = client.post(f"/api/projects/{pid}/extract", json={"chapter_index": 0, "use_cache": False})
+        check(resp.status_code == 429, "超额度返回 429（不是 424）", str(resp.status_code))
+        refusal = resp.json().get("detail", "")
+        check("最多" in refusal and not refusal.startswith("模型调用失败"), "拒绝说明是额度语义而非上游失败", refusal[:70])
+        scan_response(resp, "POST /extract（超额度）")
+
         resp = client.post(f"/api/projects/{pid}/check", json={"title": "第六章", "text": "林砚用左手使刀。", "use_cache": False})
         check(resp.status_code == 400, "空设定库时检查被拦下", str(resp.status_code))
         scan_response(resp, "POST /check（无设定库）")
@@ -228,6 +241,8 @@ def live_run(url: str) -> None:
 
     base = url.rstrip("/")
     # Read-only on purpose: probing a deployed instance must not spend its budget.
+    # Every probe carries a Range header, and these responses are static or
+    # streamed, so a 206 is a success, not a partial failure.
     probes = ["/", "/api/meta", "/api/sample", "/favicon.ico", "/static/index.html", "/api/projects/deadbeef"]
     for path in probes:
         request = urllib.request.Request(base + path, headers={"range": "bytes=0-1023"})
@@ -239,7 +254,7 @@ def live_run(url: str) -> None:
         except urllib.error.HTTPError as e:
             body, status = e.read().decode("utf-8", errors="ignore"), e.code
             headers = "\n".join(f"{k}: {v}" for k, v in e.headers.items())
-        check(status in (200, 204, 404), f"GET {path} 可达", str(status))
+        check(status in (200, 204, 206, 404), f"GET {path} 可达", str(status))
         # Nothing here should look like a credential, and the canary is unknown
         # for a live instance, so shape is all we can assert.
         scan_text(body, f"GET {path}", canary=None)
