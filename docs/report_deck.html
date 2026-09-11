@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>守门人 Gatekeeper · 汇报</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{--paper:#F4F5F2;--ink:#1C2128;--muted:#5B6470;--line:#D6DAD5;--panel:#fff;--accent:#1F5F6B;--accent-soft:#E2EEF0;--warn:#B7791F;--good:#3C7A4E;--bad:#9B3F3F;
+--serif:"Noto Serif SC","Songti SC","SimSun",serif;--sans:"Noto Sans SC","PingFang SC","Microsoft YaHei",sans-serif;--mono:"IBM Plex Mono",Menlo,Consolas,monospace}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:20px;line-height:1.75;overflow:hidden}
+.scene{position:absolute;inset:0;display:none;flex-direction:column;justify-content:center;padding:64px 88px}
+.scene.on{display:flex;animation:fade .5s ease}
+@keyframes fade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.kicker{font-family:var(--mono);font-size:15px;letter-spacing:.18em;color:var(--accent);text-transform:uppercase;margin-bottom:14px}
+h1{font-family:var(--serif);font-size:76px;margin:0 0 10px;font-weight:700;letter-spacing:.01em}
+h2{font-family:var(--serif);font-size:44px;margin:0 0 26px;font-weight:700}
+.sub{font-size:24px;color:var(--muted);margin-bottom:34px}
+ul{margin:0;padding:0;list-style:none}
+li{margin:0 0 16px;padding-left:30px;position:relative}
+li::before{content:"";position:absolute;left:0;top:.62em;width:11px;height:11px;border-radius:50%;background:var(--accent)}
+li b{font-weight:700}
+li .d{color:var(--muted);font-size:18px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:34px}
+.card{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:22px 26px}
+.card h3{font-family:var(--serif);font-size:23px;margin:0 0 8px}
+.card p{margin:0;color:var(--muted);font-size:18px;line-height:1.7}
+.card.bad{border-left-color:var(--bad)}.card.warn{border-left-color:var(--warn)}.card.good{border-left-color:var(--good)}
+table{border-collapse:collapse;width:100%;font-size:19px;background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+th,td{padding:13px 18px;text-align:left;border-bottom:1px solid var(--line)}
+th{font-family:var(--mono);font-size:14px;letter-spacing:.08em;color:var(--muted);font-weight:500;background:#EDEFEA}
+tr:last-child td{border-bottom:none}
+td.n{font-family:var(--mono);font-weight:500}
+.tag{display:inline-block;padding:2px 11px;border-radius:999px;font-size:15px;font-weight:500;background:var(--accent-soft);color:var(--accent)}
+.tag.good{background:#E3EFE5;color:var(--good)}.tag.bad{background:#F5E3E3;color:var(--bad)}
+.links{position:absolute;left:88px;right:88px;bottom:34px;display:flex;gap:26px;font-family:var(--mono);font-size:15px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+.links b{color:var(--ink);font-weight:500}
+.hint{font-size:17px;color:var(--muted);margin-top:22px}
+.done{list-style:none}
+.done li::before{background:var(--good)}
+.not li::before{background:var(--muted)}
+</style>
+</head>
+<body>
+
+<section class="scene on" data-scene="1">
+  <div class="kicker">AI 故事创作产品 · 求职实操题</div>
+  <h1>守门人 Gatekeeper</h1>
+  <div class="sub">长篇小说的设定与连续性核对工具 —— AI 不动笔，只做检查</div>
+  <div style="display:flex;gap:14px;flex-wrap:wrap">
+    <span class="tag">逐章抽取设定库</span>
+    <span class="tag">新章查矛盾</span>
+    <span class="tag">每条结论附逐字原文引用</span>
+  </div>
+  <div class="links"><span><b>在线演示</b> inner-homework-naturally-policies.trycloudflare.com</span><span><b>仓库</b> github.com/1hb6s7t/gatekeeper</span></div>
+</section>
+
+<section class="scene" data-scene="2">
+  <div class="kicker">问题</div>
+  <h2>长篇创作的设定崩塌</h2>
+  <ul>
+    <li><b>几十万字之后</b>，年龄、惯用手、伤势恢复、物品归属、人物关系，全靠作者一个人记</li>
+    <li><b>读者先发现矛盾</b>，作者后知后觉；人工维护设定集成本高、也查不全</li>
+    <li><b>直接问通用大模型有两个硬伤</b><div class="d">每次都要重喂全文；结论没有出处，作者没法核实</div></li>
+  </ul>
+  <div class="links"><span><b>在线演示</b> inner-homework-naturally-policies.trycloudflare.com</span><span><b>仓库</b> github.com/1hb6s7t/gatekeeper</span></div>
+</section>
+
+<section class="scene" data-scene="3">
+  <div class="kicker">为什么是这个方向</div>
+  <h2>三个理由</h2>
+  <div class="cols">
+    <div class="card"><h3>失败点收敛</h3><p>欧美写作工具、中文网文平台、短剧编剧工具、学术长文基准，共同短板都是长篇一致性；其余环节已很卷。</p></div>
+    <div class="card"><h3>合规上敞开的门</h3><p>平台普遍允许 AI 辅助检查、明确禁止 AI 代写正文。检查是唯一既不越界、又真刚需的切口。</p></div>
+    <div class="card"><h3>可量化</h3><p>能造答案卡：预埋矛盾 + 不该报的陷阱，产出召回率、误报数、引用命中率，而不是「看起来不错」。</p></div>
+    <div class="card"><h3>可交付</h3><p>prompt 哈希缓存让评审不配密钥也能走通全路径；真实通道另有完整评测日志。</p></div>
+  </div>
+  <div class="links"><span><b>在线演示</b> inner-homework-naturally-policies.trycloudflare.com</span><span><b>仓库</b> github.com/1hb6s7t/gatekeeper</span></div>
+</section>
+
+<section class="scene" data-scene="4">
+  <div class="kicker">关键选择</div>
+  <h2>四个取舍</h2>
+  <ul>
+    <li><b>只做检查，不做生成</b><div class="d">边界划死：不写正文、不改文风，只回答「哪里对不上」</div></li>
+    <li><b>证据校验交给程序，不交给模型</b><div class="d">引用必须逐字出现在原文，对不上就在界面标黄</div></li>
+    <li><b>「有意为之」做成结构化规则</b><div class="d">服务端按实体名 + 文本做可解释匹配，下次检查自动折叠，不依赖模型自觉</div></li>
+    <li><b>离线也要能演示</b><div class="d">模型原始输出按 prompt 哈希缓存进仓库，无密钥秒级走通全流程</div></li>
+  </ul>
+  <div class="links"><span><b>在线演示</b> inner-homework-naturally-policies.trycloudflare.com</span><span><b>仓库</b> github.com/1hb6s7t/gatekeeper</span></div>
+</section>
+
+<section class="scene" data-scene="6">
+  <div class="kicker">评测</div>
+  <h2>答案卡上的硬数字</h2>
+  <table>
+    <tr><th>通道</th><th>模型</th><th>预埋矛盾召回</th><th>误报</th><th>踩陷阱</th><th>引用逐字命中</th><th>单次检查</th></tr>
+    <tr><td>离线缓存</td><td class="n">—</td><td class="n">9/10</td><td class="n">1</td><td class="n">0/2</td><td class="n">9/9</td><td class="n">秒级</td></tr>
+    <tr><td>claude -p</td><td class="n">claude-opus-5</td><td class="n">9/10</td><td class="n">1</td><td class="n">0/2</td><td class="n">9/9</td><td class="n">86s</td></tr>
+    <tr><td>OpenAI 兼容 API</td><td class="n">mimo-v2.5-pro</td><td class="n">9/10</td><td class="n">0</td><td class="n">0/2</td><td class="n">8/9</td><td class="n">90s</td></tr>
+  </table>
+  <div class="hint">真实通道每章抽取 78–306 秒：准确率达标，耗时是当前最明显的短板（PRD 目标 60 秒内）。</div>
+  <div class="links"><span><b>在线演示</b> inner-homework-naturally-policies.trycloudflare.com</span><span><b>仓库</b> github.com/1hb6s7t/gatekeeper</span></div>
+</section>
+
+<section class="scene" data-scene="7">
+  <div class="kicker">AI 如何参与开发</div>
+  <h2>产品里是引擎，研发中是结对</h2>
+  <div class="cols">
+    <div class="card"><h3>产品侧</h3><p>AI 是被调用的检查引擎：抽取设定、比对矛盾。三条通道可切换（OpenAI 兼容 / Anthropic SDK / claude -p）。</p></div>
+    <div class="card"><h3>研发侧</h3><p>全程 AI 编程代理结对：市场调研 → 写实施方案 → 拆成 7 个任务逐个推进 → 真实评测与收尾。共 12 次提交。</p></div>
+    <div class="card warn"><h3>它也暴露了自己的问题</h3><p>网关带隐藏推理 token → 输出被截断 → 加自动重试；模型给引用包引号 → 逐字校验误判 → 校验逻辑做引号归一化。</p></div>
+    <div class="card good"><h3>分工</h3><p>人负责判断、取舍与验收；AI 负责调研、执行与试错。每一个结论都由程序和答案卡复核。</p></div>
+  </div>
+  <div class="links"><span><b>在线演示</b> inner-homework-naturally-policies.trycloudflare.com</span><span><b>仓库</b> github.com/1hb6s7t/gatekeeper</span></div>
+</section>
+
+<section class="scene" data-scene="8">
+  <div class="kicker">边界与投入</div>
+  <h2>完成到哪一步</h2>
+  <div class="cols">
+    <div class="card good"><h3>已完成 · 真实可用</h3><p>切章 · 逐章抽取 · 查矛盾 · 证据逐字校验 · 规则过滤 · 时间线 · 手工编辑 · Markdown 导出<br>两条真实模型通道均已实测</p></div>
+    <div class="card bad"><h3>未做</h3><p>账号体系 · 几十万字以上的分卷策略 · 官方 Anthropic 端点实测 · 建议一键改写</p></div>
+  </div>
+  <ul style="margin-top:26px">
+    <li><b>实际投入</b>：从首个提交到功能收尾跨约 6.5 小时，真正动手约 4–5 小时（含调研与等待模型推理）</li>
+  </ul>
+  <div class="links"><span><b>在线演示</b> inner-homework-naturally-policies.trycloudflare.com</span><span><b>仓库</b> github.com/1hb6s7t/gatekeeper</span></div>
+</section>
+
+<script>
+function showScene(id){document.querySelectorAll('.scene').forEach(s=>s.classList.toggle('on',s.dataset.scene==String(id)))}
+window.showScene = showScene;
+</script>
+</body>
+</html>

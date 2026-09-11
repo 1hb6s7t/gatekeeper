@@ -157,7 +157,11 @@ def call_model(
         return key.read_text(encoding="utf-8"), "cache"
     provider = PROVIDER
     if provider == "cache":
-        raise RuntimeError("cache miss and provider=cache")
+        raise RuntimeError(
+            "离线演示模式：这一步没有缓存结果。缓存只覆盖内置示例从第 1 章到检查的完整流程，"
+            "请先「载入示例」并点「建立设定库」把 5 章抽完再检查；"
+            "要处理自己的稿件，请在本地启动并配置模型通道（见 README）"
+        )
     dispatch = {
         "openai": _call_openai,
         "anthropic": _call_anthropic,

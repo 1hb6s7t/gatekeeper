@@ -4,6 +4,26 @@
 
 调研结论见 `docs/` 与上层目录的《AI 故事创作产品_市场调研报告》：欧美工具、中文网文、短剧编剧、学术基准在同一个地方失败，即长篇一致性；而所有网文平台都允许 AI 做大纲、人设、检查，禁止 AI 代写正文。守门人就切这一刀。
 
+## 在线演示与汇报录屏
+
+| 交付物 | 地址 |
+|---|---|
+| 线上演示（离线缓存模式） | https://inner-homework-naturally-policies.trycloudflare.com |
+| 汇报录屏（4 分 20 秒） | https://inner-homework-naturally-policies.trycloudflare.com/report.mp4 ／ 仓库内 `docs/report.mp4` |
+| 仓库 | https://github.com/1hb6s7t/gatekeeper |
+
+演示实例跑在 `GATEKEEPER_PROVIDER=cache`，**不接任何模型、不需要密钥、也不会消耗额度**。评审按下面的顺序点，几秒内就能走完整条路径：
+
+1. 「载入示例」→「切分章节」（内置《青崖夜行》5 章）
+2. 「建立设定库」——逐章抽取，15 个实体 / 60 条事实，来源一栏显示「缓存」
+3. 「时间线」页看按章事件与「由右手使刀变为左手使刀」这类状态变更链
+4. 「新章节」页粘贴第六章（点「载入示例新章」自动填入）→「检查矛盾」→ 9 条发现，每条带设定侧引用、新章侧引用和修改建议
+5. 「对照答案卡」——召回 9/10、误报 1、陷阱 0/2、冲突引用逐字命中 9/9
+
+缓存只覆盖内置示例这条路径。**要处理自己的稿件，请按下面「运行」在本地启动并配置模型通道**；在演示站上点缓存未覆盖的步骤会明确提示这是离线演示模式。
+
+汇报录屏 4 分 20 秒，内容是：定点（第 1 节）→ 问题（第 2 节）→ 为什么选这个方向（第 3 节）→ 关键取舍（第 4 节）→ 实机走一遍完整路径（第 5 节，缓存模式实录）→ 三条通道的评测硬数字（第 6 节）→ AI 在研发中如何参与、以及它暴露出的两个自身问题（第 7 节）→ 完成边界与实际投入（第 8 节）。录制用的幻灯片、旁白文本和脚本都在 `docs/report_deck.html`、`docs/narration.json`、`scripts/record_report.py`，可复现。
+
 ## 运行
 
 ```bash
@@ -119,6 +139,10 @@ eval.py         评估脚本
 tests/smoke_api.py  缓存模式全路径 API 冒烟
 scripts/shot_timeline_rules.py   Playwright 截时间线/规则两张界面图
 scripts/ui_smoke.py    Playwright 浏览器级全路径冒烟
+scripts/tts_narration.ps1       用 Windows SAPI 从 docs/narration.json 生成 8 段旁白
+scripts/record_report.py        Playwright 录屏：幻灯片按旁白时长配速 + 实机走一遍缓存路径
+scripts/build_report_video.py   拼接旁白并 mux 到录屏，产出 docs/report.mp4
 .env.example    OpenAI 兼容通道配置占位
 docs/PRD.md     一页 PRD；IMPLEMENTATION_PLAN_4H.md 为本次实施方案
+docs/report_deck.html + narration.json + report.mp4   汇报幻灯片、旁白文本、成片
 ```

@@ -6,3 +6,8 @@ data/cache_*/
 !.env.example
 __pycache__/
 *.pyc
+
+# regenerable capture artefacts (scripts/tts_narration.ps1, scripts/record_report.py)
+docs/narration/*.wav
+docs/video_raw/
+docs/_frames/

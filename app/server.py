@@ -471,6 +471,15 @@ def export_markdown(pid: str):
     )
 
 
+@app.get("/report.mp4")
+def report_video():
+    """Serve the recorded walkthrough next to the app so reviewers can watch it in the browser."""
+    path = ROOT / "docs" / "report.mp4"
+    if not path.exists():
+        raise HTTPException(404, "report.mp4 not found — see README")
+    return FileResponse(path, media_type="video/mp4")
+
+
 app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
 
