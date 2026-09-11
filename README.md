@@ -8,9 +8,10 @@
 
 | 交付物 | 地址 |
 |---|---|
-| 线上演示（真实模型通道 + 示例缓存） | https://inner-homework-naturally-policies.trycloudflare.com |
-| 汇报录屏（4 分 18 秒） | https://inner-homework-naturally-policies.trycloudflare.com/report.mp4 ／ [Release 附件](https://github.com/1hb6s7t/gatekeeper/releases/download/v1-report/report.mp4) ／ 仓库内 `docs/report.mp4` |
+| 线上演示（真实模型通道 + 示例缓存） | https://breach-discuss-somewhere-lab.trycloudflare.com —— **临时地址，随隧道重启变化**，见下 |
+| 汇报录屏（4 分 18 秒） | https://breach-discuss-somewhere-lab.trycloudflare.com/report.mp4 ／ [Release 附件](https://github.com/1hb6s7t/gatekeeper/releases/download/v1-report/report.mp4) ／ 仓库内 `docs/report.mp4` |
 | 仓库 | https://github.com/1hb6s7t/gatekeeper |
+| 长期可用（自托管） | 仓库内 `Dockerfile`，任选容器托管，见「托管部署」 |
 
 演示实例跑在真实模型通道（`GATEKEEPER_PROVIDER=openai`，模型 `mimo-v2.5-pro`），密钥只存在于那台机器的环境变量里。**内置示例这条路径由随仓库分发的缓存直接回放，秒级返回、零额度消耗**，所以评审走下面这五步不需要等模型，作者也不为此付费：
 
@@ -21,6 +22,10 @@
 5. 「对照答案卡」——召回 9/10、误报 1、陷阱 0/2、冲突引用逐字命中 9/9
 
 **换自己的稿件**同样能走完整条路径，这时才会真的调用模型：单章抽取 74–80 秒、检查 18–90 秒（实测，取决于章节长度），返回的每条结论照样带逐字引用。额度由 `app/guard.py` 兜底：每访客每小时 20 次、全站每天 150 次、并发 1，超了返回 429 并说明原因；稿件过长返回 413。原稿不需要密钥的离线模式仍然可用，`GATEKEEPER_PROVIDER=cache` 一行即可切回。
+
+**这条地址是临时的，请当成随时会变。** 它是 cloudflared 的免费 quick tunnel，Cloudflare 自己的日志就写着这类无账号隧道「没有可用性保证」。实测被主动断开过一次（`accept stream listener encountered a failure` 之后 `no more connections active and exiting`，服务随即不可达），重新拉起后域名换成了现在这个。用 `scripts/start_demo.ps1` 启动会有守护进程盯着，两端任一退出就重启并把当前地址打印出来，但**它保证服务在跑，保证不了地址不变**。
+
+连带影响：汇报录屏里页面底部显示的仍是录制当天的旧地址。等托管地址定下来再连录屏一起更新，避免为一条注定还要变的地址重复录制。要一条真正长期可用的链接，见「托管部署」。
 
 汇报录屏 4 分 18 秒，内容是：定位（第 1 节）→ 问题（第 2 节）→ 为什么选这个方向（第 3 节）→ 关键取舍（第 4 节）→ 实机走一遍完整路径（第 5 节，缓存模式实录）→ 三条通道的评测硬数字（第 6 节）→ AI 在研发中如何参与、以及它暴露出的两个自身问题（第 7 节）→ 完成边界与实际投入（第 8 节）。录制用的幻灯片、旁白文本和脚本都在 `docs/report_deck.html`、`docs/narration.json`、`scripts/record_report.py`，可复现。
 
@@ -188,6 +193,7 @@ samples/        示例稿件、第六章、答案卡
 eval.py         评估脚本
 tests/smoke_api.py  缓存模式全路径 API 冒烟
 scripts/serve_public.ps1        带真实密钥启动公开演示（密钥只从环境变量读）
+scripts/start_demo.ps1          带守护的启动：服务与隧道谁退出就重启谁，并打印当前公网地址
 scripts/leak_check.py           密钥泄漏探针：本地全路径 + 恶意上游回显 / 线上只读
 scripts/shot_timeline_rules.py   Playwright 截时间线/规则两张界面图
 scripts/ui_smoke.py    Playwright 浏览器级全路径冒烟
