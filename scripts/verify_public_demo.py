@@ -62,12 +62,15 @@ def main() -> int:
                 print(f"  中文提示={'离线演示模式' in detail}")
                 print(f"  -> {detail[:160]}")
             else:
-                # Real channel: the same request is a genuine model call, so the
-                # interesting assertions are that it answered and that the answer
-                # carries verbatim evidence rather than the cache explanation.
-                findings = (miss.json().get("check") or {}).get("findings", []) if miss.status_code == 200 else []
+                # Real channel: the same request is a genuine model call the first
+                # time, and a cache hit on any repeat (the answer is written to the
+                # instance's writable cache).  Report which one it was rather than
+                # assuming a fresh call, and check the answer carries verbatim
+                # evidence either way.
+                check = (miss.json().get("check") or {}) if miss.status_code == 200 else {}
+                findings = check.get("findings", [])
                 verified = sum(1 for f in findings if f.get("conflict_verified"))
-                print(f"  真实通道作答：{len(findings)} 条发现，引用逐字命中 {verified}/{len(findings)}")
+                print(f"  作答来源={check.get('source')}：{len(findings)} 条发现，引用逐字命中 {verified}/{len(findings)}")
                 print(f"  未泄漏上游错误={'模型调用失败' not in detail}")
 
             md = c.get(f"/api/projects/{pid}/export.md")
