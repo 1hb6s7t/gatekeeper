@@ -9,7 +9,7 @@
 | 交付物 | 地址 |
 |---|---|
 | 线上演示（离线缓存模式） | https://inner-homework-naturally-policies.trycloudflare.com |
-| 汇报录屏（4 分 20 秒） | https://inner-homework-naturally-policies.trycloudflare.com/report.mp4 ／ [Release 附件](https://github.com/1hb6s7t/gatekeeper/releases/download/v1-report/report.mp4) ／ 仓库内 `docs/report.mp4` |
+| 汇报录屏（4 分 18 秒） | https://inner-homework-naturally-policies.trycloudflare.com/report.mp4 ／ [Release 附件](https://github.com/1hb6s7t/gatekeeper/releases/download/v1-report/report.mp4) ／ 仓库内 `docs/report.mp4` |
 | 仓库 | https://github.com/1hb6s7t/gatekeeper |
 
 演示实例跑在 `GATEKEEPER_PROVIDER=cache`，**不接任何模型、不需要密钥、也不会消耗额度**。评审按下面的顺序点，几秒内就能走完整条路径：
@@ -22,7 +22,7 @@
 
 缓存只覆盖内置示例这条路径。**要处理自己的稿件，请按下面「运行」在本地启动并配置模型通道**；在演示站上点缓存未覆盖的步骤会明确提示这是离线演示模式。
 
-汇报录屏 4 分 20 秒，内容是：定位（第 1 节）→ 问题（第 2 节）→ 为什么选这个方向（第 3 节）→ 关键取舍（第 4 节）→ 实机走一遍完整路径（第 5 节，缓存模式实录）→ 三条通道的评测硬数字（第 6 节）→ AI 在研发中如何参与、以及它暴露出的两个自身问题（第 7 节）→ 完成边界与实际投入（第 8 节）。录制用的幻灯片、旁白文本和脚本都在 `docs/report_deck.html`、`docs/narration.json`、`scripts/record_report.py`，可复现。
+汇报录屏 4 分 18 秒，内容是：定位（第 1 节）→ 问题（第 2 节）→ 为什么选这个方向（第 3 节）→ 关键取舍（第 4 节）→ 实机走一遍完整路径（第 5 节，缓存模式实录）→ 三条通道的评测硬数字（第 6 节）→ AI 在研发中如何参与、以及它暴露出的两个自身问题（第 7 节）→ 完成边界与实际投入（第 8 节）。录制用的幻灯片、旁白文本和脚本都在 `docs/report_deck.html`、`docs/narration.json`、`scripts/record_report.py`，可复现。
 
 ## 运行
 
