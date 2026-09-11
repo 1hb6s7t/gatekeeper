@@ -9,7 +9,7 @@
 | 交付物 | 地址 |
 |---|---|
 | 线上演示（离线缓存模式） | https://inner-homework-naturally-policies.trycloudflare.com |
-| 汇报录屏（4 分 20 秒） | https://inner-homework-naturally-policies.trycloudflare.com/report.mp4 ／ 仓库内 `docs/report.mp4` |
+| 汇报录屏（4 分 20 秒） | https://inner-homework-naturally-policies.trycloudflare.com/report.mp4 ／ [Release 附件](https://github.com/1hb6s7t/gatekeeper/releases/download/v1-report/report.mp4) ／ 仓库内 `docs/report.mp4` |
 | 仓库 | https://github.com/1hb6s7t/gatekeeper |
 
 演示实例跑在 `GATEKEEPER_PROVIDER=cache`，**不接任何模型、不需要密钥、也不会消耗额度**。评审按下面的顺序点，几秒内就能走完整条路径：

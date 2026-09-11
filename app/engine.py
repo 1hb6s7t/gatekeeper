@@ -143,6 +143,14 @@ def _provider_order() -> list[str]:
     return [PROVIDER]
 
 
+class CacheMiss(RuntimeError):
+    """The offline demo was asked for something the bundled cache does not cover.
+
+    Distinct from a provider failure: nothing upstream broke, the request is
+    simply outside what the shipped cache can serve.
+    """
+
+
 def call_model(
     kind: str,
     prompt: str,
@@ -157,7 +165,7 @@ def call_model(
         return key.read_text(encoding="utf-8"), "cache"
     provider = PROVIDER
     if provider == "cache":
-        raise RuntimeError(
+        raise CacheMiss(
             "离线演示模式：这一步没有缓存结果。缓存只覆盖内置示例从第 1 章到检查的完整流程，"
             "请先「载入示例」并点「建立设定库」把 5 章抽完再检查；"
             "要处理自己的稿件，请在本地启动并配置模型通道（见 README）"

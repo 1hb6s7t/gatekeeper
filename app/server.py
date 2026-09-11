@@ -84,6 +84,18 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _model_error(e: Exception) -> HTTPException:
+    """Map an engine failure onto an HTTP status.
+
+    A cache miss in the offline demo is a 409, not a 502: nothing upstream broke,
+    and the public demo sits behind Cloudflare, which replaces any origin 5xx with
+    its own error page — that would hide the explanation from the reviewer.
+    """
+    if isinstance(e, engine.CacheMiss):
+        return HTTPException(409, str(e))
+    return HTTPException(502, f"模型调用失败：{e}")
+
+
 def _migrate_intentional(items: list[dict], project: dict) -> list[dict]:
     """Convert the first-version text exceptions into structured rules."""
     rules = []
@@ -181,7 +193,7 @@ def extract(pid: str, req: ExtractReq):
     try:
         result = engine.extract_chapter(project["bible"], i + 1, ch, allow_cache=req.use_cache)
     except Exception as e:  # surface model/provider errors to the UI
-        raise HTTPException(502, f"模型调用失败：{e}") from e
+        raise _model_error(e) from e
     ch["extracted"] = True
     save(project)
     return {"project": project, "added": result["added"], "source": result["source"]}
@@ -223,7 +235,7 @@ def check(pid: str, req: CheckReq):
         try:
             result = engine.check_chapter(project["bible"], len(project["chapters"]), chapter, intentional, allow_cache=req.use_cache)
         except Exception as e:
-            raise HTTPException(502, f"模型调用失败：{e}") from e
+            raise _model_error(e) from e
 
     for finding in result["findings"]:
         rule_id = engine.match_rule(finding, rules)
