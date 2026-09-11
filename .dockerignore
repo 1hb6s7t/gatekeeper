@@ -1,0 +1,19 @@
+.git
+__pycache__
+*.pyc
+.env
+.env.*
+
+# runtime state: never bake one machine's projects, visitor cache or counters
+# into an image.  data/cache/ is deliberately NOT excluded - it ships with the
+# repository and is what makes the sample walkthrough free.
+data/projects
+data/cache_demo
+data/cache_openai
+data/*.log
+data/limits*.json
+
+# regenerable capture artefacts
+docs/narration
+docs/video_raw
+docs/_frames
