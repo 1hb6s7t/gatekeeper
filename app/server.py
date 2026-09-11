@@ -2,25 +2,36 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import engine
+from . import engine, guard
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data" / "projects"
 DATA.mkdir(parents=True, exist_ok=True)
 SAMPLES = ROOT / "samples"
 
+# How much text one request may carry.  A public, unauthenticated endpoint should
+# not accept a whole novel it then has to hold in memory and split.
+MAX_TEXT_CHARS = int(os.environ.get("GATEKEEPER_MAX_TEXT_CHARS", "400000"))
+MAX_CHECK_CHARS = int(os.environ.get("GATEKEEPER_MAX_CHECK_CHARS", "60000"))
+MAX_CHAPTERS = int(os.environ.get("GATEKEEPER_MAX_CHAPTERS", "200"))
+
 app = FastAPI(title="守门人 Gatekeeper")
+
+# Charge the model budget before each real provider call (see app/guard.py).
+# Cache hits never reach the hook, so the bundled sample stays free to replay.
+engine.set_before_model_call(guard.reserve)
 
 
 # ---------------------------------------------------------------- storage
@@ -84,16 +95,40 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _model_error(e: Exception) -> HTTPException:
-    """Map an engine failure onto an HTTP status.
+def _client_ip(request: Request) -> str:
+    """Identify the visitor, not the tunnel.
 
-    A cache miss in the offline demo is a 409, not a 502: nothing upstream broke,
-    and the public demo sits behind Cloudflare, which replaces any origin 5xx with
-    its own error page — that would hide the explanation from the reviewer.
+    cloudflared puts the visitor address in CF-Connecting-IP, and Cloudflare
+    overwrites that header at its edge, so it cannot be forged from outside.
+    Without it every visitor would arrive as the origin's 127.0.0.1 and the
+    per-visitor window would collapse into a single global bucket.
     """
+    forwarded = request.headers.get("cf-connecting-ip", "").strip()
+    if forwarded:
+        return forwarded
+    return (request.client.host if request.client else "") or "unknown"
+
+
+def _model_error(e: Exception) -> HTTPException:
+    """Map an engine failure onto an HTTP status the reviewer can actually read.
+
+    Two constraints shape the status codes.  A cache miss is not an upstream
+    failure, and the public demo sits behind Cloudflare, which replaces any
+    origin 5xx with its own error page; both the cache miss and a provider
+    failure therefore travel as 4xx so the explanation survives to the browser.
+
+    The message is scrubbed on the way out.  An SDK exception can quote the
+    request it failed on, headers included, and those headers carry the model
+    key; the full text is kept in the server log instead.
+    """
+    if isinstance(e, guard.Exceeded):
+        return HTTPException(429, guard.scrub(e))
     if isinstance(e, engine.CacheMiss):
         return HTTPException(409, str(e))
-    return HTTPException(502, f"模型调用失败：{e}")
+    # The log keeps the full diagnosis but not the credential: an SDK error can
+    # embed the headers it failed on, and log files get shared.
+    engine.log_stderr(f"provider call failed: {guard.scrub(e, limit=1200, first_line_only=False)}")
+    return HTTPException(424, f"模型调用失败：{guard.scrub(e)}")
 
 
 def _migrate_intentional(items: list[dict], project: dict) -> list[dict]:
@@ -157,9 +192,13 @@ def sample():
 
 @app.post("/api/projects")
 def create_project(req: NewProject):
+    if len(req.text) > MAX_TEXT_CHARS:
+        raise HTTPException(413, f"稿件过长（{len(req.text)} 字），这个演示实例最多接受 {MAX_TEXT_CHARS} 字。")
     chapters = engine.split_chapters(req.text)
     if not chapters or not chapters[0]["text"]:
         raise HTTPException(400, "没有识别到正文")
+    if len(chapters) > MAX_CHAPTERS:
+        raise HTTPException(413, f"识别到 {len(chapters)} 章，超过这个实例的上限 {MAX_CHAPTERS} 章。")
     warnings = [
         f"{chapter['title']} {len(chapter['text'])} 字，超出建议长度，抽取可能变慢或截断"
         for chapter in chapters
@@ -184,15 +223,16 @@ def get_project(pid: str):
 
 
 @app.post("/api/projects/{pid}/extract")
-def extract(pid: str, req: ExtractReq):
+def extract(pid: str, req: ExtractReq, request: Request):
     project = load(pid)
     i = req.chapter_index
     if i < 0 or i >= len(project["chapters"]):
         raise HTTPException(400, "chapter_index out of range")
     ch = project["chapters"][i]
     try:
-        result = engine.extract_chapter(project["bible"], i + 1, ch, allow_cache=req.use_cache)
-    except Exception as e:  # surface model/provider errors to the UI
+        with guard.slot(_client_ip(request)):
+            result = engine.extract_chapter(project["bible"], i + 1, ch, allow_cache=req.use_cache)
+    except Exception as e:  # surface model/provider/budget errors to the UI
         raise _model_error(e) from e
     ch["extracted"] = True
     save(project)
@@ -200,10 +240,12 @@ def extract(pid: str, req: ExtractReq):
 
 
 @app.post("/api/projects/{pid}/check")
-def check(pid: str, req: CheckReq):
+def check(pid: str, req: CheckReq, request: Request):
     project = load(pid)
     if not project["bible"]:
         raise HTTPException(400, "请先建立设定库")
+    if len(req.text) > MAX_CHECK_CHARS:
+        raise HTTPException(413, f"新章节过长（{len(req.text)} 字），这个演示实例最多接受 {MAX_CHECK_CHARS} 字。")
     parts = engine.split_chapters(req.text)
     body = parts[0]["text"] if len(parts) == 1 else req.text.strip()
     title = req.title.strip() or (parts[0]["title"] if parts[0]["title"] != "第1章" else "新章节")
@@ -233,7 +275,8 @@ def check(pid: str, req: CheckReq):
         result = {"findings": findings, "source": "cache"}
     else:
         try:
-            result = engine.check_chapter(project["bible"], len(project["chapters"]), chapter, intentional, allow_cache=req.use_cache)
+            with guard.slot(_client_ip(request)):
+                result = engine.check_chapter(project["bible"], len(project["chapters"]), chapter, intentional, allow_cache=req.use_cache)
         except Exception as e:
             raise _model_error(e) from e
 

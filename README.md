@@ -24,6 +24,29 @@
 
 汇报录屏 4 分 18 秒，内容是：定位（第 1 节）→ 问题（第 2 节）→ 为什么选这个方向（第 3 节）→ 关键取舍（第 4 节）→ 实机走一遍完整路径（第 5 节，缓存模式实录）→ 三条通道的评测硬数字（第 6 节）→ AI 在研发中如何参与、以及它暴露出的两个自身问题（第 7 节）→ 完成边界与实际投入（第 8 节）。录制用的幻灯片、旁白文本和脚本都在 `docs/report_deck.html`、`docs/narration.json`、`scripts/record_report.py`，可复现。
 
+## 演示实例的密钥与额度边界
+
+演示站可以带真实模型跑，密钥只活在服务端进程的环境变量里：不写进任何文件、不进仓库、不回显，也不以任何形式出现在响应里。前端能拿到的只有通道名和模型 ID，`/api/meta` 就只返回这两个字段。
+
+三层保护都在 `app/guard.py`：
+
+- **密钥只从环境变量读。** 启动脚本 `scripts/serve_public.ps1` 不接受密钥作为参数、不打印它，检测不到就拒绝启动；启动时把通道钉死为 `openai`，因为默认的 `auto` 在上游失败时会回落到 `claude -p`，那等于让陌生访客花掉作者自己的 Claude 额度。
+- **错误信息脱敏。** SDK 抛出的异常可能把失败的请求连同请求头一起带出来，而请求头里就是密钥。所有异常文本先过 `guard.scrub()`：只保留第一行、把凭据形状的字符串替换成 `[已隐藏]`、截断到 300 字。服务端日志也过一遍脱敏，因为日志会被贴进 issue 或附件。
+- **额度刹车。** 缓存命中完全不碰模型，所以内置示例谁走都免费；其余请求先记账再调用。默认每个访客每 60 分钟 20 次、全站每天 150 次、并发 1（这个网关单章抽取要 78–306 秒，排队比让并发把支出放大更好）。计数按 UTC 日重置并落盘，重启不会发出新额度。
+
+演示站位于 Cloudflare 之后，而 Cloudflare 会把源站的 5xx 换成它自己的错误页，所以失败一律走 4xx，中文说明才到得了评审的浏览器：缓存未命中 `409`，模型调用失败 `424`，额度用尽 `429`，稿件或新章过长 `413`。
+
+自己验一遍：
+
+```bash
+python scripts/leak_check.py                            # 本地：探针密钥 + 故意回显 Authorization 的假上游，走完整路径
+python scripts/leak_check.py --url https://你的隧道地址   # 线上：只读探测，不消耗额度
+```
+
+本地模式先在引擎层确认「上游确实回显了密钥」（否则探针无效），再断言所有响应体、响应头、服务端日志和工作区文件里都没有它。当前结果 PASS。
+
+**这个密钥在聊天里明文出现过，交付前请轮换一个。** 轮换后只需在自己的 shell 里重设 `GATEKEEPER_OPENAI_API_KEY` 再跑启动脚本，仓库、README 和录屏都不用改。
+
 ## 运行
 
 ```bash
@@ -45,6 +68,13 @@ python -m uvicorn app.server:app --port 8765
 | `GATEKEEPER_CACHE_DIR` | 默认 `data/cache` | 覆盖缓存目录；真实评测建议用 `data/cache_openai`，不要覆盖示例缓存 |
 | `GATEKEEPER_CLI_EFFORT` | 默认 `medium` | `claude -p --effort` |
 | `GATEKEEPER_CLI_MODEL` | 可选 | `claude -p --model` |
+| `GATEKEEPER_CACHE_FALLBACK_DIR` | 默认空 | 只读缓存回退目录。公开演示指向仓库内的 `data/cache`，让内置示例免费回放，同时访客的稿件只写进 `GATEKEEPER_CACHE_DIR`。留空则只读一处：两个缓存里存的是不同模型对同一 prompt 的答案，默认混读会让一次评测看起来像同一个模型的输出 |
+| `GATEKEEPER_IP_LIMIT` / `GATEKEEPER_IP_WINDOW_SECONDS` | 默认 `20` / `3600` | 同一访客在窗口内的真实模型调用上限；缓存命中不计 |
+| `GATEKEEPER_DAILY_LIMIT` | 默认 `150` | 全站每日真实模型调用上限，按 UTC 日重置 |
+| `GATEKEEPER_MAX_CONCURRENCY` | 默认 `1` | 同时在跑的真实模型调用数 |
+| `GATEKEEPER_LIMIT_STATE` | 默认 `data/limits.json` | 计数落盘位置（已 gitignore） |
+| `GATEKEEPER_DISABLE_LIMITS` | 默认空 | 本地用自己的密钥调试时设为 `1` 关掉刹车 |
+| `GATEKEEPER_MAX_TEXT_CHARS` / `_MAX_CHECK_CHARS` / `_MAX_CHAPTERS` | 默认 `400000` / `60000` / `200` | 单次请求的正文、新章与章节数上限，超出返回 `413` |
 
 Anthropic SDK 读标准的 `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL`。
 OpenAI 通道的四个变量可直接参考仓库里的 `.env.example`；项目不自动加载 `.env`，请在启动进程的 shell 中设置。
@@ -132,11 +162,14 @@ python eval.py --no-cache
 
 ```
 app/engine.py   切章、prompt、三条模型通道、缓存、合并、校验、变更识别
+app/guard.py    公开演示的额度刹车与错误脱敏（密钥不经手、只被读取）
 app/server.py   FastAPI 路由与 JSON 文件存储
 static/index.html  单页前端（稿件 / 设定库 / 时间线 / 矛盾清单 三栏）
 samples/        示例稿件、第六章、答案卡
 eval.py         评估脚本
 tests/smoke_api.py  缓存模式全路径 API 冒烟
+scripts/serve_public.ps1        带真实密钥启动公开演示（密钥只从环境变量读）
+scripts/leak_check.py           密钥泄漏探针：本地全路径 + 恶意上游回显 / 线上只读
 scripts/shot_timeline_rules.py   Playwright 截时间线/规则两张界面图
 scripts/ui_smoke.py    Playwright 浏览器级全路径冒烟
 scripts/tts_narration.ps1       用 Windows SAPI 从 docs/narration.json 生成 8 段旁白

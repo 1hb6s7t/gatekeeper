@@ -1,6 +1,7 @@
 data/projects/
 data/*.log
 data/cache_*/
+data/limits*.json
 .env
 .env.*
 !.env.example

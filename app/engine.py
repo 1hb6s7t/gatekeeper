@@ -24,6 +24,17 @@ CACHE_DIR = Path(os.environ.get("GATEKEEPER_CACHE_DIR", str(ROOT / "data" / "cac
 if not CACHE_DIR.is_absolute():
     CACHE_DIR = ROOT / CACHE_DIR
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
+# Optional second, read-only cache location.  A demo instance points its writable
+# CACHE_DIR at a scratch directory and sets this to the cache shipped in the
+# repository, so the bundled sample replays for free while anything a visitor
+# writes lands outside the tracked tree.  Off by default: two caches hold answers
+# from different models to the same prompts, and silently mixing them would make
+# an evaluation look like one model's output.
+CACHE_FALLBACK_DIR = os.environ.get("GATEKEEPER_CACHE_FALLBACK_DIR", "").strip()
+if CACHE_FALLBACK_DIR:
+    CACHE_FALLBACK_DIR = Path(CACHE_FALLBACK_DIR)
+    if not CACHE_FALLBACK_DIR.is_absolute():
+        CACHE_FALLBACK_DIR = ROOT / CACHE_FALLBACK_DIR
 
 MODEL = os.environ.get("GATEKEEPER_MODEL", "claude-opus-5")
 OPENAI_BASE_URL = os.environ.get("GATEKEEPER_OPENAI_BASE_URL", "https://token-plan-cn.xiaomimimo.com/v1")
@@ -64,9 +75,27 @@ def split_chapters(text: str) -> list[dict[str, str]]:
 
 
 # ---------------------------------------------------------------- providers
-def _cache_key(kind: str, prompt: str) -> Path:
+def _cache_name(kind: str, prompt: str) -> str:
     h = hashlib.sha256((kind + "\n" + prompt).encode("utf-8")).hexdigest()[:24]
-    return CACHE_DIR / f"{kind}-{h}.json"
+    return f"{kind}-{h}.json"
+
+
+def _cache_key(kind: str, prompt: str) -> Path:
+    return CACHE_DIR / _cache_name(kind, prompt)
+
+
+def _cached_response(kind: str, prompt: str) -> str | None:
+    """Return a pre-recorded response for this exact prompt, if one exists.
+
+    The writable cache wins; the read-only fallback is consulted second and only
+    when `GATEKEEPER_CACHE_FALLBACK_DIR` is set.
+    """
+    name = _cache_name(kind, prompt)
+    for directory in dict.fromkeys(d for d in (CACHE_DIR, CACHE_FALLBACK_DIR) if d):
+        candidate = directory / name
+        if candidate.exists():
+            return candidate.read_text(encoding="utf-8")
+    return None
 
 
 def _call_anthropic(prompt: str, system: str) -> str:
@@ -151,6 +180,20 @@ class CacheMiss(RuntimeError):
     """
 
 
+_before_model_call = None
+
+
+def set_before_model_call(callback) -> None:
+    """Install a callback run immediately before every real provider request.
+
+    The server uses this to charge the public demo's model budget.  Cache hits
+    return before that point, so replaying the bundled sample costs nothing, and
+    a callback may raise to refuse the call.
+    """
+    global _before_model_call
+    _before_model_call = callback
+
+
 def call_model(
     kind: str,
     prompt: str,
@@ -160,9 +203,11 @@ def call_model(
     retries: int = 0,
 ) -> tuple[str, str]:
     """Return (raw_text, source), retrying provider failures when requested."""
+    if allow_cache:
+        cached = _cached_response(kind, prompt)
+        if cached is not None:
+            return cached, "cache"
     key = _cache_key(kind, prompt)
-    if allow_cache and key.exists():
-        return key.read_text(encoding="utf-8"), "cache"
     provider = PROVIDER
     if provider == "cache":
         raise CacheMiss(
@@ -178,21 +223,28 @@ def call_model(
     order = _provider_order()
     if not order or any(p not in dispatch for p in order):
         raise RuntimeError(f"未知模型通道：{provider}")
+
+    def _call(provider_name: str, **kwargs) -> str:
+        """Every provider request goes through here, so every one is charged."""
+        if _before_model_call is not None:
+            _before_model_call()
+        return dispatch[provider_name](prompt, system, **kwargs)
+
     last_errors: list[str] = []
     for _attempt in range(max(0, retries) + 1):
         errors = []
         for p in order:
             try:
-                out = dispatch[p](prompt, system)
+                out = _call(p)
                 if not isinstance(out, str) or not out.strip():
                     raise RuntimeError("模型返回空文本")
                 key.write_text(out, encoding="utf-8")
                 return out, p
             except Exception as e:  # noqa: BLE001 - fall through to next provider
                 if p == "openai" and isinstance(e, RuntimeError) and "输出被截断" in str(e):
-                    _print_stderr("OpenAI 兼容 API 输出被截断（finish_reason=length），增大 max_tokens 重试一次")
+                    log_stderr("OpenAI 兼容 API 输出被截断（finish_reason=length），增大 max_tokens 重试一次")
                     try:
-                        out = _call_openai(prompt, system, max_tokens=16000)
+                        out = _call("openai", max_tokens=16000)
                         if not isinstance(out, str) or not out.strip():
                             raise RuntimeError("模型返回空文本")
                         key.write_text(out, encoding="utf-8")
@@ -220,7 +272,7 @@ def parse_json(raw: str) -> Any:
         return json.loads(raw[: end + 1])
 
 
-def _print_stderr(message: str) -> None:
+def log_stderr(message: str) -> None:
     """Print a bounded diagnostic without breaking on a GBK terminal."""
     try:
         print(message, file=sys.stderr)
@@ -229,7 +281,7 @@ def _print_stderr(message: str) -> None:
 
 
 def _print_parse_retry(raw: str) -> None:
-    _print_stderr(f"OpenAI 返回不是完整 JSON，准备重试；原始输出前 300 字：{raw[:300]}")
+    log_stderr(f"OpenAI 返回不是完整 JSON，准备重试；原始输出前 300 字：{raw[:300]}")
 
 
 def quote_in(text: str, quote: str) -> bool:
