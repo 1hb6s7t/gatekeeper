@@ -168,6 +168,10 @@ python eval.py --no-cache
 | 浏览器级 UI 冒烟（2026-09-10） | `scripts/ui_smoke.py`：PASS；真实点击停止/继续抽取（停在第 1 章、续跑到 5 章）、检查、答案卡面板、规则创建→重检跳过→删除、手工添加与行内编辑、导出下载头；无 console 错误 |
 | 真实 Claude CLI（2026-09-09） | `claude -p`、`--effort medium`、模型 `claude-opus-5`：15/60，召回 9/10，误报 1，陷阱 0，冲突引用 9/9，检查 86 秒 |
 | 真实 OpenAI 兼容 API（2026-09-10） | `mimo-v2.5-pro`：15 实体 / 52 事实，抽取引用 49/52，检查引用 8/9（剥引号后）；召回 9/10，误报 0，陷阱 0；每章抽取 78–306 秒，检查 90 秒；第一章输出截断一次，`max_tokens` 提到 16000 重试成功。完整日志 `data/eval_openai.log`，原始输出在 `data/cache_openai/`（git 忽略） |
+| 真机全路径，真实通道（2026-09-12） | 自备两章稿件：抽取 80s / 74s，3 实体 6 事实引用全部逐字核验，识别出「惯用手由右手变为左手」；新章检查报出预埋矛盾，设定引用与新章引用双双逐字命中；导出正常。全过程 173s |
+| 公网隧道核验，真实通道（2026-09-12） | 示例 5/5 章与检查全部 `来源 cache`（评审路径免费秒级）、15/60、9 条发现引用全核验；临时改章经 Cloudflare 由真实模型作答 8 条发现、引用 8/8；导出 7002 字符；`/report.mp4` 206 |
+| 密钥泄漏探针（2026-09-12） | `scripts/leak_check.py` PASS：假密钥配合故意回显 Authorization 的假上游，响应体、响应头、服务端日志与工作区文件里都没有密钥；额度拒绝返回 429（不是被当成上游失败的 424） |
+| 容器托管就绪（2026-09-12） | `docker build` 通过；容器内零密钥走完示例全路径（5/5 cache、15/60、9 条发现引用全核验）、`/report.mp4` 206、访客自带稿件返回 409 离线说明 |
 
 对照 PRD 成功标准：缓存回归的召回 ≥7、误报 ≤3、离线走通均达标；「一次检查 60 秒内」在两个真实通道下都**没有达标**（claude -p 86 秒、mimo 90 秒），缓存时秒级。OpenAI 通道实测召回 9/10、误报 0、陷阱 0，准确率达标；耗时瓶颈在网关推理 token 与逐章调用，未做并行或分片。
 
@@ -200,6 +204,7 @@ scripts/ui_smoke.py    Playwright 浏览器级全路径冒烟
 scripts/tts_narration.ps1       用 Windows SAPI 从 docs/narration.json 生成 8 段旁白
 scripts/record_report.py        Playwright 录屏：幻灯片按旁白时长配速 + 实机走一遍缓存路径
 scripts/build_report_video.py   拼接旁白并 mux 到录屏，产出 docs/report.mp4
+Dockerfile + .dockerignore      托管部署用镜像：默认缓存通道，托管实例因此不需要密钥
 .env.example    OpenAI 兼容通道配置占位
 docs/PRD.md     一页 PRD；IMPLEMENTATION_PLAN_4H.md 为本次实施方案
 docs/report_deck.html + narration.json + report.mp4   汇报幻灯片、旁白文本、成片
